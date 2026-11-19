@@ -1,0 +1,28 @@
+services:
+  spacenez:
+    image: ghcr.io/intellinez-com/spacenez-projects-app:${APP_VERSION:-latest}
+    container_name: spacenez
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+    ports:
+      - "127.0.0.1:5200:3000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/auth').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
