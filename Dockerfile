@@ -15,7 +15,7 @@ ENV VITE_SUPABASE_URL=${VITE_SUPABASE_URL} \
 
 RUN test -n "$VITE_SUPABASE_URL" \
     && test -n "$VITE_SUPABASE_PUBLISHABLE_KEY" \
-    && npm run build:server
+    && bun scripts/build-server.mjs
 
 FROM node:22-alpine AS runtime
 

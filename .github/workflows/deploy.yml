@@ -78,6 +78,7 @@ jobs:
           SSH_PORT: ${{ secrets.SERVER_PORT || 22 }}
         run: |
           set -Eeuo pipefail
+          : "${SERVER_USER:?Set USER to ubuntu in Actions secrets}"
           scp \
             -i "$SSH_KEY_PATH" \
             -P "$SSH_PORT" \
@@ -90,13 +91,14 @@ jobs:
         env:
           SERVER_HOST: ${{ secrets.PROD_SERVER_HOST }}
           SERVER_USER: ${{ secrets.USER }}
-          SSH_PORT: ${{ secrets.SERVER_PORT }}
+          SSH_PORT: ${{ secrets.SERVER_PORT || 22 }}
           GHCR_OWNER: ${{ github.repository_owner }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE_TAG: ${{ github.sha }}
         shell: bash
         run: |
           set -Eeuo pipefail
+          : "${SERVER_USER:?Set USER to ubuntu in Actions secrets}"
 
           # Actions supplies this run-scoped package token; no PAT is added as
           # a repository secret or baked into the image.
