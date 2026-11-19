@@ -1,0 +1,83 @@
+Spacenez feature acceptance — 2026-11-19
+
+Backend copy and the real API checks below are complete. Browser/owner acceptance and
+production deployment are pending. See MIGRATION-STATUS.txt for the migration record.
+Never record passwords, service keys, password hashes or decrypted snapshots here.
+
+Completed migration and import
+[x] Destination was empty; database TLS/hostname verified; public signup API-disabled.
+[x] DPAPI-encrypted source snapshot saved and round-trip verified outside Git.
+[x] Original account UUID/password hash/identity/profile/role/project and 20 tasks
+    restored and reconciled. Auth restore preceded the application bootstrap trigger;
+    managed Auth schema/history and storage protection triggers were left intact.
+[x] Applied Drizzle 0000, Drizzle 0001, then Supabase 20261119091954_portal_workflows.
+    Private ledger records file hashes/counts; immediate strict no-op retry passed.
+[x] Original private project-files bucket settings preserved; source had no file objects.
+[x] Imported the separate client plan: 18 tasks and 14 planned approvals, no historical
+    decisions/requests or invented assignments. The import itself created no account.
+    Import retry returned the same project. Original source rows were unchanged.
+[x] Created the intended client login separately and granted project client access.
+    Sign-in verified exactly 1 visible project, 18 tasks and 14 planned approvals, then
+    signed out. Duplicate-safe recheck confirmed the existing account remained linked.
+    Credentials are protected locally in client-onboarding.json.dpapi outside Git.
+[x] Final source verification after client onboarding found all original rows unchanged.
+
+Fourteen real API checks passed
+[x] Restored baseline: 1 user/admin/project and 20 original tasks before client import.
+[x] Temporary authenticated admin, partner and client roles.
+[x] Admin project creation and project membership management.
+[x] Partner/client isolation across projects.
+[x] Client task and project writes denied.
+[x] Client comments and explicit PostgREST relationship embeds.
+[x] Forged-author and cross-project comments denied.
+[x] Private uploads and database-stamped uploader/time attribution.
+[x] Signed private reads and foreign-file denial.
+[x] Editor approval requests with immutable submitted-content snapshots.
+[x] Decision authorization and feedback requirements.
+[x] Submitted evidence retained after deletion attempts.
+[x] Content revisions reject stale decisions.
+[x] Prior decisions and submitted content retained.
+Temporary users, projects and blobs were removed after testing; original fingerprints
+remained unchanged. These API checks do not substitute for deployed browser acceptance.
+
+Current destination
+2 accounts, 2 projects, 38 tasks, 14 planned approvals, 0 actual approval requests/decisions,
+0 stored file objects. The client contact in project details does not grant portal access.
+
+Remaining owner and client acceptance
+[ ] Owner signs in with the existing portal email/password; do not replace its UUID.
+    Hash preservation was verified, but that particular password login was not tested.
+[ ] Securely hand off the protected client credentials and have the client change the
+    initial password. Email delivery/reset requires production SMTP and URL settings.
+[ ] In the browser, owner/partner/client review Overview, task dates/stages, updates,
+    task comments, approval history and Details. Clients cannot edit project/task data.
+[ ] Verify account switching/cross-tab sign-out clears the previous account's cache.
+[ ] Confirm approved local BrandMark PNGs, including the light sidebar mark, render.
+[ ] Test real photo previews/file opening and browser save/error states. Check partial
+    multi-file failure, upload cleanup and metadata-first deletion compensation; a
+    re-added entry is attributed to the restoring editor/time.
+[ ] Exercise simultaneous sessions editing content or deleting an attachment while
+    requesting/responding to approval. Real concurrent-session testing remains pending.
+[ ] Configure Site URL, exact allowed reset-password/staging redirects and production
+    SMTP/sender; deliver and complete a reset at the deployed /reset-password URL.
+[ ] Add and test the actual Calendly link. Fill missing owners/due dates and clarify
+    the ambiguous same-day start; leave unresolved values blank.
+
+Workflow limits to retain in client expectations
+Strict approval-gated stage changes and included-option caps remain manual processes.
+Current comments are client-visible; internal-only notes are not implemented.
+Task title/description/stage and task-document changes advance approval revision.
+Status, priority, dates and assignee changes alone do not advance that content revision.
+
+Production cutover
+[ ] Build/deploy through infra, configure HTTPS/DNS for app.spacenez.com and verify
+    browser/server configuration points to the same migrated destination.
+[ ] Rotate credentials shared in chat and provide runtime secrets through infra's
+    secret manager. Keep decrypted credentials/snapshots and local DPAPI files out of Git.
+[ ] Reconcile any continued source writes by original IDs before final cutover. Global
+    table counts/hashes now differ intentionally because the client project was added.
+    Keep source and encrypted backup; reconcile destination writes before any rollback.
+[ ] Before using Supabase db push, record the applied feature migration through the
+    installed CLI's documented repair workflow. The private ledger is separate from
+    CLI history; do not replay the baseline or feature migration on this populated DB.
+Production app deployment itself does not require replaying completed migrations.

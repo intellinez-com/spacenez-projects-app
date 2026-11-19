@@ -1,0 +1,106 @@
+Spacenez infrastructure deployment
+
+Target: restored Micro Supabase backend cwhofudilhawuvmhzgdx and infra hosting at app.spacenez.com.
+Repository: https://github.com/intellinez-com/spacenez-projects-app
+The backend copy and API acceptance checks are complete. Production app deployment is pending.
+Keep the original Lovable backend available until owner acceptance and final cutover.
+See deploy/MIGRATION-STATUS.txt for the completed migration record and remaining launch work.
+
+Build and run
+Use Node.js 22 and Bun 1.4.5. Install with the existing bun.lock:
+  bun install --frozen-lockfile --ignore-scripts
+Build:
+  npm run build:server
+Run:
+  npm start
+build:server selects Nitro's node-server preset on Windows and Linux.
+start runs node .output/server/index.mjs. Default port is 3000; set HOST and PORT as needed.
+Proxy the complete app through infra HTTPS. Deploy the whole .output directory.
+Rebuild in CI on the production OS/architecture; do not copy this Windows build to Linux.
+The existing npm run build command remains available for the original Lovable workflow.
+Local validation commands:
+  node node_modules/typescript/bin/tsc --noEmit --pretty false
+  npm test
+  node scripts/smoke-server.mjs
+Run the startup smoke after building; it temporarily serves only on localhost:4319 and checks
+login/reset pages and the favicon. It does not verify authenticated workflows or migration.
+
+Configuration
+Use .env.example as the field reference; its public values identify the new destination.
+Supply VITE_SUPABASE_* public configuration in CI before building; it is embedded in browser JS.
+Supply SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, SUPABASE_PROJECT_ID and server-only
+SUPABASE_SERVICE_ROLE_KEY through the runtime environment/secret manager.
+Browser and server must point to the same new project.
+Never VITE-prefix privileged keys. Exclude filled .env files, outputs, backup archives and
+.migration-private from Git and any container build context.
+The local .env still targets the original source backend and has not been changed.
+For local development against the migrated destination, run:
+  npm run dev:target
+This serves http://127.0.0.1:4174 using the encrypted local connection configuration.
+It does not edit .env or provide a production secret distribution mechanism.
+
+Migration
+These database files have already been applied to the destination in this exact order:
+  1. drizzle/migrations/0000_migration.sql
+  2. drizzle/migrations/0001_migration.sql
+  3. supabase/migrations/20261119091954_portal_workflows.sql
+The first two files create the existing application schema and policies. The third adds
+project contact/meeting fields, task revisions, planned approvals, approval RPCs, atomic
+project-plan import, attribution guards, and approval evidence retention.
+Their SHA-256 values and restore counts are recorded in portal_migration_private.source_restores.
+Production app deployment does not require replaying any of these migrations.
+Supabase db push reads supabase/migrations; it does not apply drizzle/migrations. The restore
+runner's private ledger does not mark Supabase CLI migration history. Before adopting db push,
+use the installed CLI's documented migration-repair workflow to mark 20261119091954 applied.
+Do not run db push blindly, replay the Drizzle baseline on this populated project, or apply
+both a full schema dump and the same schema-creating migrations. A fresh replacement project
+would need the reviewed baseline/feature order and a separately reconciled data restore.
+
+The original auth UUID, password hash, identity, profile, role, project and 20 tasks were
+restored and reconciled. Auth rows were inserted before the application bootstrap trigger
+existed; no Supabase-managed triggers or managed Auth schema/history were disabled/replaced.
+An encrypted, DPAPI round-trip-verified source snapshot is retained locally outside Git.
+The original private project-files bucket settings and 50 MiB limit were preserved; there
+were no source file objects to transfer. Public signup is disabled and was API-verified.
+Fourteen real API checks passed using temporary admin/partner/client accounts and uploads.
+All temporary users, projects and blobs were removed; original-row fingerprints were unchanged.
+The intended client login was then created separately and linked to the imported project.
+Client sign-in saw exactly 1 project, 18 tasks and 14 planned approvals, then signed out.
+A duplicate-safe recheck confirmed the same account/access; final original-row checks passed.
+Initial client credentials are DPAPI-protected locally outside Git; secure handoff and the
+client's password change remain pending.
+
+Owner login with the existing portal password remains untested; the hash was preserved.
+Users must sign in again because existing sessions do not transfer to the new project.
+Configure Site URL https://app.spacenez.com, its /reset-password redirect, the exact staging
+URL, production SMTP/sender and the real Calendly booking link before client launch.
+Use deploy/FEATURE-CHECKS.txt for the remaining browser, account and production checks.
+
+MIGRATION-CHECKS.sql compares the pre-import baseline, with new project/task columns excluded
+so the original fields compare across schema versions. After the separate client import,
+destination totals intentionally exceed source totals: compare original source IDs/rows
+using the retained private snapshot rather than expecting global table hashes to match.
+If the source receives new writes, freeze and reconcile them before final cutover. Preserve
+destination work already created; do not rerun the original restore over this populated project.
+The strict restore runner now refuses changed rows/counts. Any rollback also requires
+reconciling writes made on the destination. Keep the original backend and encrypted backup.
+
+Branding
+The four approved original PNGs now live in public/branding and BrandMark uses those local
+paths. Copies were checked against source metadata byte sizes, PNG signatures and dimensions;
+the images were not converted or altered. Original Lovable asset metadata remains in src/assets.
+Ship the public assets with the app and check the light sidebar variant during staging review.
+
+Scope
+The migrated source project retains its 20 tasks. The client's 18 tracker rows and 14 planned
+approval rows were imported as a separate project, preserving original values/provenance.
+Retry returned that same project, with no duplicate import and no fabricated client decisions.
+Destination totals: 2 accounts, 2 projects, 38 tasks, 14 planned approvals, 0 actual approval
+requests/decisions and 0 stored files. The intended client login/access is verified.
+Implemented: client Overview, project updates/comments, private files, revision-specific
+client approval requests/decisions and admin import/retry. API checks passed; production
+browser acceptance, owner login, client password handoff/change and infra HTTPS/DNS deployment remain.
+Missing owners/due dates and the ambiguous same-day start need team input. Strict stage gates
+and included-option limits remain manual. Comments are client-visible; internal-only notes
+are not implemented. Rotate credentials shared in chat before production and supply current
+runtime secrets to infrastructure through its secret manager.

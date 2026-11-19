@@ -1,0 +1,21 @@
+Local client usability preview
+
+Start from the project directory:
+  npm run dev:client
+Open http://127.0.0.1:4173/dashboard
+
+The actual client pages use an isolated, in-memory sample client and fictional project.
+The sample includes varied task statuses/dates, comments, a file and an illustration,
+and a pending client approval. Comments and decisions reset on browser refresh.
+There are no backend, email or account changes. Upload controls are hidden for clients.
+To review sign-in: http://127.0.0.1:4173/auth
+  Email: client@example.test
+  Password: preview-client
+
+This explicit Vite serve mode aliases the browser Supabase client to a closed sample
+transport. Unknown requests and editor/admin writes are denied; there is no real-fetch
+fallback. Production builds in client-preview mode are rejected. Normal builds use the
+real backend client. This previews usability; it does not prove production authentication,
+database policies, migration, email delivery or uploaded file operations.
+
+The dev server binds to 127.0.0.1:4173. Stop it with Ctrl+C in its launch session.

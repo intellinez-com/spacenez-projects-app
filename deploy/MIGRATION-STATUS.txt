@@ -1,0 +1,56 @@
+Backend migration status — 2026-11-19
+
+Destination: cwhofudilhawuvmhzgdx (Mumbai session pooler).
+The destination was verified empty before restoration. Database TLS verifies the Supabase
+CA chain and hostname. Public sign-up is disabled and was verified through the Auth API.
+
+Completed
+- Encrypted, round-trip-verified source snapshot retained locally under .migration-private.
+  It contains original public/Auth rows and schema metadata; no credentials or client data
+  are included in this repository. Windows DPAPI protects the local snapshot and connection.
+- Original account UUID, password hash, identity, profile, admin role, project and 20 tasks
+  restored and reconciled against every original field. All original IDs were preserved.
+- Auth rows were restored before the app bootstrap trigger was created. Supabase's managed
+  Auth schema/migration history and storage protection triggers were left intact.
+- Original private bucket settings preserved. There were no source file objects to copy.
+- 14 real API workflow checks passed with temporary admin/partner/client accounts, including
+  project isolation, denied client edits, comments/relationship embeds, private upload/read,
+  upload attribution, client decisions, evidence retention and stale-revision rejection.
+  Temporary users, projects and file blobs were removed; original rows were unchanged.
+- The separate client plan imported: 18 tasks and 14 planned approval entries. Import retry
+  returned the same project. It created no historical approvals or sign-offs.
+- Client login created separately and project access verified. Sign-in showed exactly
+  1 visible project, 18 tasks and 14 planned approvals; the verification session signed out.
+  A duplicate-safe recheck confirmed the existing client remained linked. Onboarding
+  credentials are protected locally in .migration-private/client-onboarding.json.dpapi.
+- Final original-row verification passed after onboarding; original records remain exact.
+- Destination totals after onboarding: 2 accounts, 2 projects, 38 tasks, 14 planned approvals,
+  0 actual approval requests/decisions, 0 stored file objects.
+- Approved original brand PNGs are included locally, unchanged.
+
+Launch checks still required
+- Owner signs in using the existing portal email/password. The hash was preserved, but
+  the operator does not know that password and has not tested that particular login.
+- Hand off the protected client credentials securely and have the client change the initial
+  password. Project contact details alone do not grant access; explicit membership is in place.
+- Set Site URL, allowed reset-password redirects, production SMTP/sender and the Calendly link.
+- Fill the plan's missing owners/due dates and clarify its ambiguous same-day start.
+- Strict approval-gated stage changes and included-option limits remain manual workflows.
+  Current comments are client-visible; an internal-only note setting has not been implemented.
+- Rotate the credentials shared in chat before production use and provide current runtime
+  secrets to infrastructure through its secret manager.
+- Infra builds and deploys the app and configures HTTPS/DNS for app.spacenez.com.
+
+Source retention and cutover
+The original Lovable backend and its frontend were not modified or decommissioned. Existing
+sessions do not carry over to the new project; users must sign in again. If source writes
+continue, compare and reconcile them before final cutover. Do not overwrite new destination
+work with the old snapshot. The strict restore runner refuses changed or populated targets.
+
+Migration history
+Applied in order: drizzle/0000, drizzle/0001, Supabase 20261119091954_portal_workflows.
+Their SHA-256 values and restore counts are recorded in portal_migration_private.source_restores.
+The runner does not mark Supabase CLI history. Before adopting `supabase db push`, use the
+installed CLI's documented migration-repair workflow to mark 20261119091954 applied; do not
+reapply these schema-creating files to this populated database. Production app deployment
+does not require replaying any migration.
