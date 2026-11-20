@@ -3,10 +3,10 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  signIn: vi.fn(), requestReset: vi.fn(), updateUser: vi.fn(), readUser: vi.fn(), navigate: vi.fn(),
+  signIn: vi.fn(), requestReset: vi.fn(), updateUser: vi.fn(), readUser: vi.fn(), getSession: vi.fn(), signOut: vi.fn(), navigate: vi.fn(),
   search: {} as { mode?: "forgot" },
 }));
-vi.mock("@/integrations/supabase/client", () => ({ supabase: { auth: { signInWithPassword: mocks.signIn, resetPasswordForEmail: mocks.requestReset, updateUser: mocks.updateUser } } }));
+vi.mock("@/integrations/supabase/client", () => ({ supabase: { auth: { signInWithPassword: mocks.signIn, resetPasswordForEmail: mocks.requestReset, updateUser: mocks.updateUser, getSession: mocks.getSession, signOut: mocks.signOut } } }));
 vi.mock("@/lib/session", () => ({
   readPortalUser: mocks.readUser,
   isMissingPortalSession: (error: unknown) => !!error && typeof error === "object" && "code" in error && error.code === "session_not_found",
@@ -22,8 +22,10 @@ vi.mock("@tanstack/react-router", () => ({
 
 import { Route as AuthRoute } from "@/routes/auth";
 import { Route as ResetRoute } from "@/routes/reset-password";
+import { Route as IndexRoute } from "@/routes/index";
 const AuthPage = AuthRoute.options.component as ComponentType;
 const ResetPage = ResetRoute.options.component as ComponentType;
+const IndexPage = IndexRoute.options.component as ComponentType;
 let refreshAuth: (() => void) | undefined;
 
 beforeEach(() => {
@@ -34,6 +36,7 @@ beforeEach(() => {
     if (options.to === "/auth") { mocks.search = options.search ?? {}; refreshAuth?.(); }
   });
   mocks.readUser.mockResolvedValue({ id: "client-a", email: "client@example.test" });
+  mocks.getSession.mockResolvedValue({ data: { session: null }, error: null });
   mocks.signIn.mockResolvedValue({ error: null });
   mocks.requestReset.mockResolvedValue({ error: null });
   mocks.updateUser.mockResolvedValue({ error: null });
@@ -56,6 +59,118 @@ async function fillNewPassword(value = "  New password spaces  ") {
   fireEvent.change(screen.getByLabelText("Confirm new password"), { target: { value } });
   return screen.getByRole("button", { name: "Save password" }).closest("form")!;
 }
+
+const savedSessionHint = { data: { session: { user: { id: "client-a" } } }, error: null };
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((finish) => { resolve = finish; });
+  return { promise, resolve };
+}
+
+describe("Returning visitor sessions", () => {
+  it.each(["home", "auth"])("keeps a fresh %s immediately usable without a user verification request", async (page) => {
+    if (page === "home") {
+      render(<IndexPage />);
+      expect(screen.getByRole("link", { name: "Open my projects" })).toHaveAttribute("href", "/auth");
+    } else {
+      renderAuth();
+      expect(screen.getByLabelText("Email")).toBeEnabled();
+      expect(screen.getByLabelText("Password")).toBeEnabled();
+    }
+    await waitFor(() => expect(screen.queryByText("Checking your saved sign-in…")).not.toBeInTheDocument());
+    expect(mocks.getSession).toHaveBeenCalledOnce();
+    expect(mocks.readUser).not.toHaveBeenCalled();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it.each(["home", "auth"])("opens projects from %s only after verifying a saved session", async (page) => {
+    const verification = deferred<{ id: string }>();
+    mocks.getSession.mockResolvedValue(savedSessionHint);
+    mocks.readUser.mockReturnValue(verification.promise);
+    if (page === "home") {
+      render(<IndexPage />);
+      expect(screen.getByRole("link", { name: "Open my projects" })).toHaveAttribute("href", "/auth");
+    } else {
+      renderAuth();
+      expect(screen.getByLabelText("Email")).toBeEnabled();
+    }
+    await waitFor(() => expect(mocks.readUser).toHaveBeenCalledOnce());
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    await act(async () => { verification.resolve({ id: "client-a" }); });
+    expect(mocks.navigate).toHaveBeenCalledWith({ to: "/dashboard", replace: true });
+  });
+
+  it("leaves an invalid cached session on the usable form without redirecting or looping", async () => {
+    mocks.getSession.mockResolvedValue(savedSessionHint);
+    mocks.readUser.mockResolvedValue(null);
+    renderAuth();
+    await waitFor(() => expect(screen.queryByText("Checking your saved sign-in…")).not.toBeInTheDocument());
+    expect(mocks.readUser).toHaveBeenCalledOnce();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(mocks.signOut).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Email")).toBeEnabled();
+  });
+
+  it("offers saved-session retry after a network error without signing out or blocking the form", async () => {
+    mocks.getSession.mockResolvedValue(savedSessionHint);
+    mocks.readUser.mockRejectedValueOnce(new Error("Network unavailable")).mockResolvedValueOnce({ id: "client-a" });
+    renderAuth();
+    expect(await screen.findByRole("alert")).toHaveTextContent("couldn’t check your saved sign-in");
+    expect(screen.getByLabelText("Email")).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeEnabled();
+    expect(mocks.signOut).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Retry saved sign-in" }));
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith({ to: "/dashboard", replace: true }));
+  });
+
+  it("does not check or redirect a saved session on the requested forgot-password form", async () => {
+    mocks.search = { mode: "forgot" };
+    mocks.getSession.mockResolvedValue(savedSessionHint);
+    renderAuth();
+    await act(async () => {});
+    expect(screen.getByRole("heading", { name: "Reset password" })).toBeInTheDocument();
+    expect(mocks.getSession).not.toHaveBeenCalled();
+    expect(mocks.readUser).not.toHaveBeenCalled();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it.each(["hint", "verification"])("does not replace a user’s draft after a late %s result", async (phase) => {
+    const hint = deferred<typeof savedSessionHint>();
+    const verification = deferred<{ id: string }>();
+    mocks.getSession.mockReturnValue(phase === "hint" ? hint.promise : Promise.resolve(savedSessionHint));
+    mocks.readUser.mockReturnValue(verification.promise);
+    renderAuth();
+    if (phase === "verification") await waitFor(() => expect(mocks.readUser).toHaveBeenCalledOnce());
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "draft@example.test" } });
+    await act(async () => { hint.resolve(savedSessionHint); verification.resolve({ id: "client-a" }); });
+    expect(screen.getByLabelText("Email")).toHaveValue("draft@example.test");
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    if (phase === "hint") expect(mocks.readUser).not.toHaveBeenCalled();
+  });
+
+  it("ignores a late verification after switching to password recovery", async () => {
+    const verification = deferred<{ id: string }>();
+    mocks.getSession.mockResolvedValue(savedSessionHint);
+    mocks.readUser.mockReturnValue(verification.promise);
+    renderAuth();
+    await waitFor(() => expect(mocks.readUser).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole("button", { name: "Forgot password?" }));
+    await act(async () => { verification.resolve({ id: "client-a" }); });
+    expect(screen.getByRole("heading", { name: "Reset password" })).toBeInTheDocument();
+    expect(mocks.navigate.mock.calls.some(([options]) => options.to === "/dashboard")).toBe(false);
+  });
+
+  it("ignores a saved-session check that finishes after the page unmounts", async () => {
+    const verification = deferred<{ id: string }>();
+    mocks.getSession.mockResolvedValue(savedSessionHint);
+    mocks.readUser.mockReturnValue(verification.promise);
+    const view = renderAuth();
+    await waitFor(() => expect(mocks.readUser).toHaveBeenCalledOnce());
+    view.unmount();
+    await act(async () => { verification.resolve({ id: "client-a" }); });
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+});
 
 describe("Sign-in and reset-link forms", () => {
   it("shows pending feedback, blocks repeated submits and preserves an actionable sign-in error", async () => {

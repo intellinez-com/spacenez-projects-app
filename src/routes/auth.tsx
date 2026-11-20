@@ -1,11 +1,12 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { BrandMark } from "@/components/BrandMark";
 import { errorMessage } from "@/lib/errors";
+import { useSavedSession } from "@/hooks/use-saved-session";
 
 export const Route = createFileRoute("/auth")({
   codeSplitGroupings: [],
@@ -31,10 +32,13 @@ function AuthPage() {
   const submitting = useRef(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const openSavedProjects = useCallback(() => navigate({ to: "/dashboard", replace: true }), [navigate]);
+  const savedSession = useSavedSession({ enabled: mode === "signin", onVerified: openSavedProjects });
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (submitting.current) return;
+    savedSession.cancel();
     submitting.current = true;
     setBusy(true);
     setError("");
@@ -64,7 +68,7 @@ function AuthPage() {
   return (
     <div className="grid min-h-dvh place-items-center bg-background px-4 py-6">
       <div className="w-full max-w-sm">
-        <Link to="/" className="inline-block">
+        <Link to="/" className="inline-block" onClick={savedSession.cancel}>
           <BrandMark className="h-10" alt="Spacenez Track" />
         </Link>
         <form onSubmit={submit} aria-busy={busy} aria-describedby={error ? "auth-error" : undefined} className="mt-8 space-y-4 rounded-xl border bg-card p-6 shadow-soft">
@@ -72,16 +76,21 @@ function AuthPage() {
           <p className="text-sm text-muted-foreground">
             Access is by invitation from the Spacenez team.
           </p>
+          {savedSession.checking && <p role="status" className="text-sm text-muted-foreground">Checking your saved sign-in…</p>}
+          {savedSession.error && <div role="alert" className="space-y-2 text-sm">
+            <p>We couldn’t check your saved sign-in. You can still use the form below.</p>
+            <Button type="button" variant="outline" onClick={savedSession.retry}>Retry saved sign-in</Button>
+          </div>}
           {error && <p id="auth-error" role="alert" className="text-sm text-destructive [overflow-wrap:anywhere]">{error}</p>}
           {notice && <p role="status" className="text-sm [overflow-wrap:anywhere]">{notice}</p>}
           <div className="space-y-1.5">
             <Label htmlFor="email">Email</Label>
-            <Input id="email" name="email" type="email" inputMode="email" autoComplete={mode === "signin" ? "username" : "email"} autoCapitalize="none" spellCheck={false} required disabled={busy} value={email} onChange={(e) => setEmail(e.target.value)} />
+            <Input id="email" name="email" type="email" inputMode="email" autoComplete={mode === "signin" ? "username" : "email"} autoCapitalize="none" spellCheck={false} required disabled={busy} value={email} onChange={(e) => { savedSession.cancel(); setEmail(e.target.value); }} />
           </div>
           {mode === "signin" && (
             <div className="space-y-1.5">
               <Label htmlFor="pw">Password</Label>
-              <Input id="pw" name="password" type="password" autoComplete="current-password" required disabled={busy} value={password} onChange={(e) => setPassword(e.target.value)} />
+              <Input id="pw" name="password" type="password" autoComplete="current-password" required disabled={busy} value={password} onChange={(e) => { savedSession.cancel(); setPassword(e.target.value); }} />
             </div>
           )}
           <Button type="submit" className="w-full" disabled={busy}>
@@ -92,6 +101,7 @@ function AuthPage() {
             disabled={busy}
             className="min-h-11 w-full text-center text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
             onClick={() => {
+              savedSession.cancel();
               setError(""); setNotice(""); setPassword("");
               void navigate({ to: "/auth", search: mode === "signin" ? { mode: "forgot" } : {}, replace: true }).catch((err: unknown) => setError(errorMessage(err, "Could not open this form. Please try again.")));
             }}

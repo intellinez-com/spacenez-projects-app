@@ -1,7 +1,9 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/components/BrandMark";
 import { STAGES } from "@/lib/constants";
+import { useSavedSession } from "@/hooks/use-saved-session";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -18,12 +20,15 @@ export const Route = createFileRoute("/")({
 });
 
 function Index() {
+  const navigate = useNavigate();
+  const openSavedProjects = useCallback(() => navigate({ to: "/dashboard", replace: true }), [navigate]);
+  const savedSession = useSavedSession({ onVerified: openSavedProjects });
   return (
     <div className="min-h-screen bg-background">
       <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
         <BrandMark className="h-9" alt="Spacenez Track" />
         <Button asChild>
-          <Link to="/auth">Sign in</Link>
+          <Link to="/auth" onClick={savedSession.cancel}>Sign in</Link>
         </Button>
       </header>
       <main className="mx-auto max-w-6xl px-6 pb-24 pt-16">
@@ -36,8 +41,13 @@ function Index() {
           design, all the way to execution and handover.
         </p>
         <Button asChild size="lg" className="mt-10">
-          <Link to="/auth">Open my projects</Link>
+          <Link to="/auth" onClick={savedSession.cancel}>Open my projects</Link>
         </Button>
+        {savedSession.checking && <p role="status" className="mt-4 text-sm text-muted-foreground">Checking your saved sign-in…</p>}
+        {savedSession.error && <div role="alert" className="mt-4 max-w-xl space-y-2 text-sm">
+          <p>We couldn’t check your saved sign-in. You can still open sign-in or try again.</p>
+          <Button type="button" variant="outline" onClick={savedSession.retry}>Retry saved sign-in</Button>
+        </div>}
 
         <ol className="mt-20 grid gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-2 lg:grid-cols-5">
           {STAGES.map((s, i) => (
