@@ -164,6 +164,90 @@ describe("published daily project updates", () => {
   });
 });
 
+describe("automatic immutable project activity", () => {
+  it("records real task status transitions with the database actor and ignores no-op or revision-only updates", async () => {
+    await asActor(partner, "update public.tasks set status='done' where id=$1", [task]);
+    const changes = await asActor<{ actor_id: string; payload: { title: string; changes: { status: { from: string; to: string } } }; server_time: boolean }>(client,
+      "select actor_id,payload,occurred_at > '2020-01-01'::timestamptz as server_time from public.project_activity where kind='task_updated' and source_id=$1", [task]);
+    expect(changes.rows).toHaveLength(1);
+    expect(changes.rows[0]).toMatchObject({ actor_id: partner, payload: { title: "Kitchen layout", changes: { status: { from: "not_started", to: "done" } } }, server_time: true });
+    await asActor(partner, "update public.tasks set status='done',content_revision=999 where id=$1", [task]);
+    await asActor(partner, "update public.tasks set position=900 where id=$1", [task]);
+    expect((await asActor(client, "select id from public.project_activity where kind='task_updated' and source_id=$1", [task])).rows).toHaveLength(1);
+  });
+
+  it("keeps the event stream project-scoped and denies direct event forgery, rewriting and trigger execution", async () => {
+    await asActor(partner, "update public.tasks set due_date='2026-11-25' where id=$1", [task]);
+    expect((await asActor(outsider, "select id from public.project_activity where project_id=$1", [project])).rows).toEqual([]);
+    await expect(asActor(null, "select id from public.project_activity")).rejects.toThrow();
+    for (const actor of [admin, partner, client]) {
+      await expect(asActor(actor, "insert into public.project_activity(project_id,kind,source_type,source_id,payload) values ($1,'task_updated','tasks',$2,'{}')", [project, task])).rejects.toThrow();
+      await expect(asActor(actor, "update public.project_activity set occurred_at='2000-01-01' where project_id=$1", [project])).rejects.toThrow();
+      await expect(asActor(actor, "delete from public.project_activity where project_id=$1", [project])).rejects.toThrow();
+    }
+    const privileges = await db.query("select has_function_privilege('authenticated','public.capture_project_activity()','EXECUTE') as api_execute, has_table_privilege('service_role','public.project_activity','INSERT') as service_insert");
+    expect(privileges.rows[0]).toEqual({ api_execute: false, service_insert: false });
+  });
+
+  it("captures actual file uploads and removals once without manufacturing task completion or revision events", async () => {
+    await attach();
+    expect((await asActor(client, "select kind,payload->>'name' as name,actor_id from public.project_activity where source_type='documents' and source_id=$1", [documentId])).rows).toEqual([{ kind: "document_added", name: "proposal.pdf", actor_id: partner }]);
+    expect((await asActor(client, "select id from public.project_activity where kind='task_updated'", [])).rows).toEqual([]);
+    await asActor(partner, "delete from public.documents where id=$1", [documentId]);
+    expect((await asActor(client, "select kind from public.project_activity where source_type='documents' and source_id=$1 order by occurred_at", [documentId])).rows).toEqual([{ kind: "document_added" }, { kind: "document_removed" }]);
+  });
+
+  it("labels client comments as comments and captures requests and real client decisions inside security-definer RPCs", async () => {
+    await asActor(client, "insert into public.comments(project_id,task_id,user_id,body,created_at) values ($1,$2,$3,'Please adjust the kitchen plan','2000-01-01')", [project, task, client]);
+    const comment = await asActor(client, "select kind,actor_id,payload->>'body' as body,occurred_at > '2020-01-01'::timestamptz as server_time from public.project_activity where source_type='comments'");
+    expect(comment.rows[0]).toEqual({ kind: "comment_added", actor_id: client, body: "Please adjust the kitchen plan", server_time: true });
+    const approval = await request();
+    await asActor(client, "select * from public.respond_task_approval($1,'changes_requested','Move the sink')", [approval.id]);
+    expect((await asActor(client, "select kind,actor_id,payload->>'feedback' as feedback from public.project_activity where source_id=$1 order by occurred_at", [approval.id])).rows).toEqual([
+      { kind: "approval_requested", actor_id: partner, feedback: null }, { kind: "approval_changes_requested", actor_id: client, feedback: "Move the sink" },
+    ]);
+  });
+
+  it("captures schedule and stage changes, preserves optional notes, and treats SQL operators as system actors", async () => {
+    await asActor(partner, "update public.projects set current_stage='layout_2d',target_date='2027-01-15' where id=$1", [project]);
+    expect((await asActor(client, "select payload->'changes'->'current_stage' as stage from public.project_activity where source_type='projects'", [])).rows).toEqual([{ stage: { from: "planning", to: "layout_2d" } }]);
+    await asActor(partner, "insert into public.project_daily_updates(project_id,work_done) values ($1,'Optional site note')", [project]);
+    expect((await asActor(client, "select kind,payload->>'work_done' as work_done from public.project_activity where source_type='project_daily_updates'")).rows).toEqual([{ kind: "team_note", work_done: "Optional site note" }]);
+    await db.query("update public.tasks set status='blocked' where id=$1", [task]);
+    expect((await asActor(client, "select actor_id from public.project_activity where kind='task_updated' and source_id=$1", [task])).rows).toEqual([{ actor_id: null }]);
+  });
+
+  it("rolls activity back with a failed write and does not break task or project cascading deletion", async () => {
+    await db.exec("savepoint activity_rollback");
+    await asActor(partner, "update public.tasks set status='done' where id=$1", [task]);
+    await db.exec("rollback to savepoint activity_rollback; release savepoint activity_rollback");
+    expect((await asActor(client, "select id from public.project_activity where kind='task_updated' and source_id=$1", [task])).rows).toEqual([]);
+    await asActor(partner, "delete from public.tasks where id=$1", [task]);
+    expect((await asActor(client, "select payload->>'title' as title from public.project_activity where kind='task_deleted' and source_id=$1", [task])).rows).toEqual([{ title: "Kitchen layout" }]);
+    await asActor(admin, "delete from public.projects where id=$1", [project]);
+    expect((await db.query("select id from public.project_activity where project_id=$1", [project])).rows).toEqual([]);
+  });
+
+  it("backfills only timestamped source records and never invents prior task completion history", async () => {
+    // Rebuild only this new feature inside the test's rollback transaction so
+    // the migration can be exercised against genuine pre-existing source rows.
+    await db.exec("drop function public.capture_project_activity() cascade; drop table public.project_activity cascade; drop table public.project_activity_tracking cascade");
+    await db.query("insert into public.documents(project_id,task_id,name,path,uploaded_by,created_at) values ($1,$2,'historic.pdf',$3,$4,'2000-01-01')", [project, task, `${project}/historic.pdf`, partner]);
+    await db.query("insert into public.comments(project_id,user_id,body,created_at) values ($1,$2,'Historic client question','2001-01-01')", [project, client]);
+    await db.query("insert into public.task_approvals(project_id,task_id,revision,snapshot,requested_by,requested_at,state,decided_by,decided_at) values ($1,$2,1,'{\"task\":{\"title\":\"Historic kitchen plan\"}}',$3,'2002-01-01','approved',$4,'2003-01-01')", [project, task, partner, client]);
+    await db.query("insert into public.project_daily_updates(project_id,report_date,work_done,created_by,created_at) values ($1,'2004-01-01','Historic optional note',$2,'2004-01-01')", [project, partner]);
+    await db.query("update public.tasks set status='done',updated_at='1999-01-01' where id=$1", [task]);
+    await db.exec(await readFile(resolve("supabase/migrations/20261120105044_project_activity.sql"), "utf8"));
+    const history = await asActor<{ kind: string; actor_id: string; historical: boolean }>(client, "select kind,actor_id,(payload->>'historical')::boolean as historical from public.project_activity order by occurred_at");
+    expect(history.rows).toEqual([
+      { kind: "document_added", actor_id: partner, historical: true }, { kind: "comment_added", actor_id: client, historical: true },
+      { kind: "approval_requested", actor_id: partner, historical: true }, { kind: "approval_approved", actor_id: client, historical: true },
+      { kind: "team_note", actor_id: partner, historical: true },
+    ]);
+    expect((await asActor(client, "select id from public.project_activity where source_type='tasks'")).rows).toEqual([]);
+  });
+});
+
 describe("task approval authorization and immutable evidence", () => {
   it("allows editors to request and project clients to decide, using the database actor", async () => {
     const approval = await request();

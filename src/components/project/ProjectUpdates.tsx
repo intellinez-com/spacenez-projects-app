@@ -46,6 +46,7 @@ function ProjectUpdatesContent({ projectId, canEdit }: { projectId: string; canE
       setDraft(""); setPage(0);
       void qc.invalidateQueries({ queryKey: ["project-updates", projectId] });
       void qc.invalidateQueries({ queryKey: ["comments", projectId] });
+      void qc.invalidateQueries({ queryKey: ["project-activity"] });
     } catch (failure) { setPostError(errorMessage(failure)); }
     finally { submitting.current = false; setPosting(false); }
   }

@@ -1,6 +1,6 @@
 # Spacenez project portal
 
-Client daily reports, project progress, work dates, discussion, private project files and revision-specific approvals. Clients see the latest daily report on their project list and land on Daily status, with Today, This week and So far views. Admins and assigned partners publish dated work reports; clients can view, comment and respond to approval requests.
+Client project activity, progress, work dates, discussion, private project files and revision-specific approvals. Clients see the latest actual project change on their project list and land on Daily status, with Today, This week and So far views. Task/project edits, shared files, comments and approval actions appear automatically; clients can view, comment and respond to approval requests.
 
 ## Local development
 
@@ -37,7 +37,7 @@ Build the complete `.output` directory on the deployment OS. Configure public bu
 
 `deploy/MIGRATION-STATUS.txt` records the completed backend copy and remaining launch checks. `deploy/FEATURE-CHECKS.txt` lists the authenticated acceptance flows. The database has already been migrated; read the migration-history note before running any schema deployment commands.
 
-`deploy/DAILY-STATUS.txt` describes the daily reporting workflow and its additional applied migration. Daily reports are separate from discussion; task completion totals show current overall progress, while daily work comes from dated team reports.
+`deploy/DAILY-STATUS.txt` describes automatic project activity and its applied migrations. The database records actors, times and actual changes; current overall task totals remain separate from the dated change history. Posting a daily report is not required.
 
 Never commit filled environment files, client import files, data exports, credentials or `.migration-private`. Git and Docker exclusions cover these paths.
 

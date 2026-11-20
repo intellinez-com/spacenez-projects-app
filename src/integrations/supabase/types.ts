@@ -132,6 +132,63 @@ export type Database = {
           },
         ]
       }
+      project_activity: {
+        Row: {
+          actor_id: string | null
+          id: string
+          kind: string
+          occurred_at: string
+          payload: Json
+          project_id: string
+          source_id: string
+          source_type: string
+          task_id: string | null
+        }
+        Insert: {
+          actor_id?: string | null
+          id?: string
+          kind: string
+          occurred_at?: string
+          payload?: Json
+          project_id: string
+          source_id: string
+          source_type: string
+          task_id?: string | null
+        }
+        Update: {
+          actor_id?: string | null
+          id?: string
+          kind?: string
+          occurred_at?: string
+          payload?: Json
+          project_id?: string
+          source_id?: string
+          source_type?: string
+          task_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_activity_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_activity_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_activity_tracking: {
+        Row: { id: boolean; started_at: string }
+        Insert: { id?: boolean; started_at?: string }
+        Update: { id?: boolean; started_at?: string }
+        Relationships: []
+      }
       project_daily_updates: {
         Row: {
           blockers: string

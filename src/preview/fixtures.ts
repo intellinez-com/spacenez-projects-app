@@ -51,7 +51,7 @@ export function createPreviewFixtures() {
   ];
   const documents: Row<"documents">[] = [
     { id: "66666666-6666-4666-8666-666666666661", project_id: previewIds.project, task_id: previewIds.reviewTask, name: "Sample layout notes.txt", path: `${previewIds.project}/sample-document.txt`, size: 500, uploaded_by: previewIds.designer, created_at: timestamp(-1) },
-    { id: "66666666-6666-4666-8666-666666666662", project_id: previewIds.project, task_id: null, name: "Sample room illustration.png", path: `${previewIds.project}/sample-room.png`, size: 1000, uploaded_by: previewIds.designer, created_at: timestamp(-1, 10) },
+    { id: "66666666-6666-4666-8666-666666666662", project_id: previewIds.project, task_id: null, name: "Sample room illustration.png", path: `${previewIds.project}/sample-room.png`, size: 1000, uploaded_by: previewIds.designer, created_at: new Date().toISOString() },
   ];
   const comments: Row<"comments">[] = [
     { id: "77777777-7777-4777-8777-777777777771", project_id: previewIds.project, task_id: null, user_id: previewIds.designer, body: "The site measurements are complete. The furniture layout is ready for your review. Open Approvals to share your decision.", created_at: timestamp(-1, 10) },
@@ -73,5 +73,15 @@ export function createPreviewFixtures() {
     id: "99999999-9999-4999-8999-999999999991", project_id: previewIds.project, task_id: previewIds.reviewTask,
     source_id: "sample-layout-review", stage_gate: "2D Layout", milestone: "Furniture layout", description: "Confirm the furniture positions before visuals begin.", source_metadata: {}, created_at: timestamp(-14),
   }];
-  return { profiles, projects, tasks, project_members, documents, comments, project_daily_updates, task_approvals, task_approval_plan, user_roles: [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", user_id: previewIds.client, role: "client" }] };
+  const survey = tasks[1]!;
+  const photo = documents[1]!;
+  const project_activity: Row<"project_activity">[] = [
+    { id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc2", project_id: previewIds.project, actor_id: previewIds.designer, kind: "task_updated", occurred_at: photo.created_at, source_type: "tasks", source_id: survey.id, task_id: survey.id, payload: { title: survey.title, status: "done", stage: survey.stage, changes: { status: { from: "in_progress", to: "done" } } } },
+    { id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc1", project_id: previewIds.project, actor_id: previewIds.designer, kind: "document_added", occurred_at: photo.created_at, source_type: "documents", source_id: photo.id, task_id: null, payload: { name: photo.name, path: photo.path, size: photo.size } },
+    { id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc3", project_id: previewIds.project, actor_id: previewIds.designer, kind: "comment_added", occurred_at: comments[0]!.created_at, source_type: "comments", source_id: comments[0]!.id, task_id: null, payload: { body: comments[0]!.body, task_title: null } },
+    { id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc4", project_id: previewIds.project, actor_id: previewIds.designer, kind: "approval_requested", occurred_at: task_approvals[0]!.requested_at, source_type: "task_approvals", source_id: task_approvals[0]!.id, task_id: previewIds.reviewTask, payload: { task_title: reviewTask.title, revision: 1, feedback: null } },
+    { id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc5", project_id: previewIds.project, actor_id: previewIds.designer, kind: "task_updated", occurred_at: timestamp(-9), source_type: "tasks", source_id: survey.id, task_id: survey.id, payload: { title: survey.title, status: "in_progress", stage: survey.stage, changes: { status: { from: "not_started", to: "in_progress" } } } },
+  ];
+  const project_activity_tracking: Row<"project_activity_tracking">[] = [{ id: true, started_at: timestamp(-20) }];
+  return { profiles, projects, tasks, project_members, documents, comments, project_daily_updates, project_activity, project_activity_tracking, task_approvals, task_approval_plan, user_roles: [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", user_id: previewIds.client, role: "client" }] };
 }

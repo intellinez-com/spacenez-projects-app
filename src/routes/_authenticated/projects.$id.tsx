@@ -72,6 +72,7 @@ function ProjectPage() {
         qc.invalidateQueries({ queryKey: ["project-updates", id] }, { throwOnError: true }),
         qc.invalidateQueries({ queryKey: ["comments", id] }, { throwOnError: true }),
         qc.invalidateQueries({ queryKey: ["daily-updates"] }, { throwOnError: true }),
+        qc.invalidateQueries({ queryKey: ["project-activity"] }, { throwOnError: true }),
       ]);
     } catch { toast.error("Some project information could not be refreshed. Check your connection and try again."); }
     finally { setRefreshing(false); }
@@ -131,7 +132,7 @@ function ProjectPage() {
           {sections.map((section) => <TabsTrigger key={section.value} value={section.value}>{section.label}</TabsTrigger>)}
         </TabsList>
         <TabsContent value="daily" className="mt-6">
-          <DailyStatus key={id} projectId={id} tasks={tasks} documents={documents} canEdit={canEdit} onOpenTask={(task) => setOpenId(task.id)} onOpenFiles={() => setActiveTab("files")} />
+          <DailyStatus key={id} projectId={id} tasks={tasks} documents={documents} canEdit={canEdit} onOpenTask={(task) => setOpenId(task.id)} onOpenFiles={() => setActiveTab("files")} onOpenUpdates={() => setActiveTab("updates")} />
         </TabsContent>
         <TabsContent value="overview" className="mt-6">
           <ProjectOverview project={project} tasks={tasks} documents={documents} onOpenTask={(task) => setOpenId(task.id)} onOpenFiles={() => setActiveTab("files")} onOpenUpdates={() => setActiveTab("updates")} />
@@ -181,6 +182,7 @@ function ProjectPage() {
 }
 
 function FilesTab({ projectId, canEdit, documents, tasks, onChange }: { projectId: string; canEdit: boolean; documents: Doc[]; tasks: Task[]; onChange: () => unknown }) {
+  const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -194,6 +196,7 @@ function FilesTab({ projectId, canEdit, documents, tasks, onChange }: { projectI
     } finally {
       setBusy(false);
       e.target.value = "";
+      void qc.invalidateQueries({ queryKey: ["project-activity"] });
       await onChange();
     }
   }
@@ -214,7 +217,7 @@ function FilesTab({ projectId, canEdit, documents, tasks, onChange }: { projectI
       }
       toast.success("File deleted");
     } catch (err) { toast.error(errorMessage(err, "File could not be deleted.")); }
-    finally { setRemoving(null); await onChange(); }
+    finally { setRemoving(null); void qc.invalidateQueries({ queryKey: ["project-activity"] }); await onChange(); }
   }
   return (
     <div>

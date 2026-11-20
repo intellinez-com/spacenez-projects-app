@@ -16,7 +16,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ProjectImportDialog } from "@/components/project/ProjectImportDialog";
 import { isTaskOverdue } from "@/lib/task-dates";
-import { loadLatestDailyUpdates, projectDay, type DailyUpdate } from "@/lib/daily-updates";
+import { projectDay } from "@/lib/daily-updates";
+import { loadLatestProjectActivity, type ProjectActivity } from "@/lib/project-activity";
+import { activityDescription } from "@/lib/activity-description";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Projects — Spacenez Track" }] }),
@@ -50,9 +52,9 @@ function Dashboard() {
     window.addEventListener("focus", updateDay);
     return () => { window.clearInterval(timer); window.removeEventListener("focus", updateDay); };
   }, []);
-  const dailyUpdates = useQuery({
-    queryKey: ["daily-updates", "dashboard", projectIds, today],
-    queryFn: () => loadLatestDailyUpdates(projectIds),
+  const activity = useQuery({
+    queryKey: ["project-activity", "dashboard", projectIds, today],
+    queryFn: () => loadLatestProjectActivity(projectIds),
     enabled: !isLoading && !isError && projectIds.length > 0,
     refetchInterval: 60_000,
   });
@@ -92,10 +94,10 @@ function Dashboard() {
       )}
 
       <section className="mt-6 sm:mt-8">
-        {!isError && projects.length > 0 && dailyUpdates.isError && (
+        {!isError && projects.length > 0 && activity.isError && (
           <div role="alert" className="mb-4 space-y-3 rounded-lg border p-4 text-sm">
-            <p>{dailyUpdates.data ? "Daily status could not be refreshed. Showing the last loaded reports." : "Daily status could not be loaded. You can still open your project."}</p>
-            <Button variant="outline" size="sm" className="min-h-11 whitespace-normal" disabled={dailyUpdates.isFetching} onClick={() => void dailyUpdates.refetch()}>Retry daily status</Button>
+            <p>{activity.data ? "Daily activity could not be refreshed. Showing the last loaded activity." : "Daily activity could not be loaded. You can still open your project."}</p>
+            <Button variant="outline" size="sm" className="min-h-11 whitespace-normal" disabled={activity.isFetching} onClick={() => void activity.refetch()}>Retry daily activity</Button>
           </div>
         )}
         {isError ? (
@@ -138,11 +140,11 @@ function Dashboard() {
                     {p.target_date && <span className="flex items-center gap-1 whitespace-nowrap"><CalendarDays className="h-3 w-3 shrink-0" />{format(parseISO(p.target_date), "d MMM yyyy")}</span>}
                   </div>
                   <div className="mt-4 min-w-0 space-y-2 border-y py-4 [overflow-wrap:anywhere]">
-                    <LatestDailyReport
-                      report={dailyUpdates.data?.[p.id]}
+                    <LatestProjectActivity
+                      event={activity.data?.[p.id]}
                       today={today}
-                      loading={dailyUpdates.isPending}
-                      unavailable={dailyUpdates.isError && !dailyUpdates.data}
+                      loading={activity.isPending}
+                      unavailable={activity.isError && !activity.data}
                     />
                     <p className="pt-1 text-sm font-medium text-oak">Open daily status →</p>
                   </div>
@@ -162,21 +164,21 @@ function Dashboard() {
   );
 }
 
-function reportDate(value: string) {
-  const date = parseISO(value);
-  return isValid(date) ? format(date, "d MMM yyyy") : "Date unavailable";
+function activityTime(value: string) {
+  const date = new Date(value);
+  return isValid(date) ? `${new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" }).format(date)} IST` : "Date unavailable";
 }
 
-function LatestDailyReport({ report, today, loading, unavailable }: { report: DailyUpdate | null | undefined; today: string; loading: boolean; unavailable: boolean }) {
-  if (loading) return <p role="status" className="text-sm text-muted-foreground">Loading daily status…</p>;
-  if (unavailable || report === undefined) return <p className="text-sm text-muted-foreground">Daily status is unavailable.</p>;
+function LatestProjectActivity({ event, today, loading, unavailable }: { event: ProjectActivity | null | undefined; today: string; loading: boolean; unavailable: boolean }) {
+  if (loading) return <p role="status" className="text-sm text-muted-foreground">Loading daily activity…</p>;
+  if (unavailable || event === undefined) return <p className="text-sm text-muted-foreground">Daily activity is unavailable.</p>;
+  const happenedToday = !!event && isValid(new Date(event.occurred_at)) && projectDay(new Date(event.occurred_at)) === today;
   return <>
-    {report?.report_date === today ? <p className="text-sm font-medium">Today’s update · {reportDate(report.report_date)}</p> : <p className="text-sm font-medium">No daily update posted today.</p>}
-    {report ? <>
-      {report.report_date !== today && <p className="text-xs text-muted-foreground">Latest report: <time dateTime={report.report_date}>{reportDate(report.report_date)}</time></p>}
-      <p className="line-clamp-3 whitespace-pre-wrap text-sm leading-relaxed">{report.work_done}</p>
-      {report.blockers && <p className="line-clamp-2 text-sm"><span className="font-medium">Delays / blockers:</span> {report.blockers}</p>}
-    </> : <p className="text-sm text-muted-foreground">The team has not shared a daily report yet.</p>}
+    {happenedToday ? <p className="text-sm font-medium">Today’s activity</p> : <p className="text-sm font-medium">No activity recorded today.</p>}
+    {event ? <>
+      <p className="text-xs text-muted-foreground">{happenedToday ? "Latest change: " : "Latest activity: "}<time dateTime={event.occurred_at}>{activityTime(event.occurred_at)}</time></p>
+      <p className="line-clamp-3 text-sm leading-relaxed"><span className="font-medium">{event.author?.full_name || event.author?.email || (event.actor_id ? "Project member" : "System")}</span> {activityDescription(event)}</p>
+    </> : <p className="text-sm text-muted-foreground">Project changes will appear here automatically.</p>}
   </>;
 }
 

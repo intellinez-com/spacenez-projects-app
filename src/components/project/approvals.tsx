@@ -189,6 +189,7 @@ export function TaskApprovalPanel({ task, projectId, currentUserId, canEdit, can
     await Promise.allSettled([
       qc.invalidateQueries({ queryKey: ["task-approvals", projectId] }),
       qc.invalidateQueries({ queryKey: ["project", projectId] }),
+      qc.invalidateQueries({ queryKey: ["project-activity"] }),
     ]);
   }
 

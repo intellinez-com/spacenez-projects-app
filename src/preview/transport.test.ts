@@ -23,6 +23,10 @@ describe("isolated client preview transport", () => {
     expect(loaded.error).toBeNull();
     expect(loaded.data?.[0]?.body).toBe("A local preview comment");
     expect(loaded.data?.[0]?.author?.full_name).toBe("Sample Client");
+    const activity = await supabase.from("project_activity").select("*,author:profiles(full_name)").eq("project_id", previewIds.project).eq("source_id", loaded.data![0]!.id);
+    expect(activity.error).toBeNull();
+    expect(activity.data?.[0]?.kind).toBe("comment_added");
+    expect(activity.data?.[0]?.actor_id).toBe(previewIds.client);
   });
 
   it("loads dated team reports separately from comments and keeps reports read-only for clients", async () => {
@@ -36,6 +40,16 @@ describe("isolated client preview transport", () => {
     expect(dated.data?.[0]?.author?.full_name).toBe("Sample Designer");
     const forbidden = await supabase.from("project_daily_updates").insert({ project_id: previewIds.project, work_done: "A client cannot publish a team report" });
     expect(forbidden.error).toBeTruthy();
+    expect(realFetch).not.toHaveBeenCalled();
+  });
+
+  it("reads recorded activity through the SDK while denying fabricated events", async () => {
+    const activity = await supabase.from("project_activity").select("*,author:profiles(full_name,email)").eq("project_id", previewIds.project).eq("kind", "task_updated").order("occurred_at", { ascending: false }).range(0, 49);
+    expect(activity.error).toBeNull();
+    expect(activity.data).toHaveLength(2);
+    expect(activity.data?.[0]?.author?.full_name).toBe("Sample Designer");
+    const forged = await supabase.from("project_activity").insert({ project_id: previewIds.project, kind: "task_updated", source_type: "tasks", source_id: previewIds.reviewTask, payload: { status: "done" } });
+    expect(forged.error).toBeTruthy();
     expect(realFetch).not.toHaveBeenCalled();
   });
 

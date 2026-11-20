@@ -30,6 +30,7 @@ function rowsFor(table: string): PreviewRow[] | null {
   if (table === "project_members") return rows.map((row) => ({ ...row, profile: fixture.profiles.find((profile) => profile.id === row["user_id"]) ?? null }));
   if (table === "comments") return rows.map((row) => ({ ...row, author: fixture.profiles.find((profile) => profile.id === row["user_id"]) ?? null, task: fixture.tasks.find((task) => task.id === row["task_id"]) ?? null }));
   if (table === "project_daily_updates") return rows.map((row) => ({ ...row, author: fixture.profiles.find((profile) => profile.id === row["created_by"]) ?? null }));
+  if (table === "project_activity") return rows.map((row) => ({ ...row, author: fixture.profiles.find((profile) => profile.id === row["actor_id"]) ?? null }));
   return rows;
 }
 
@@ -77,7 +78,9 @@ export const previewFetch: typeof fetch = async (input, init) => {
   if (request.method === "POST" && table === "comments") {
     const taskId = body["task_id"];
     if (body["project_id"] !== previewIds.project || body["user_id"] !== previewIds.client || typeof body["body"] !== "string" || !body["body"].trim() || (taskId !== null && !fixture.tasks.some((task) => task.id === taskId))) return denied("The sample comment is invalid.");
-    fixture.comments.push({ id: crypto.randomUUID(), project_id: previewIds.project, task_id: typeof taskId === "string" ? taskId : null, user_id: previewIds.client, body: body["body"].trim(), created_at: new Date().toISOString() });
+    const comment = { id: crypto.randomUUID(), project_id: previewIds.project, task_id: typeof taskId === "string" ? taskId : null, user_id: previewIds.client, body: body["body"].trim(), created_at: new Date().toISOString() };
+    fixture.comments.push(comment);
+    fixture.project_activity.push({ id: crypto.randomUUID(), project_id: previewIds.project, actor_id: previewIds.client, kind: "comment_added", occurred_at: comment.created_at, source_type: "comments", source_id: comment.id, task_id: comment.task_id, payload: { body: comment.body, task_title: fixture.tasks.find((task) => task.id === comment.task_id)?.title ?? null } });
     return json(null, 201);
   }
   if (request.method !== "GET" && request.method !== "HEAD") return denied();

@@ -28,6 +28,7 @@ export function useProject(id: string) {
   return useQuery({
     queryKey: ["project", id],
     queryFn: () => loadProject(id),
+    refetchInterval: 60_000,
   });
 }
 
@@ -37,6 +38,7 @@ export function useTaskMutations(projectId: string) {
     qc.invalidateQueries({ queryKey: ["project", projectId] }),
     qc.invalidateQueries({ queryKey: ["projects"] }),
     qc.invalidateQueries({ queryKey: ["task-approvals", projectId] }),
+    qc.invalidateQueries({ queryKey: ["project-activity"] }),
   ]);
   return {
     refresh,

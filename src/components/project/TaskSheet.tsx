@@ -105,6 +105,7 @@ function TaskSheetContent({ task, projectId, canEdit, canApprove, currentUserId,
       if (error) throw error;
       setBody("");
       void qc.invalidateQueries({ queryKey: ["project-updates", projectId] });
+      void qc.invalidateQueries({ queryKey: ["project-activity"] });
       await refetch();
     } catch (error) { setCommentError(errorMessage(error)); }
     finally { setPosting(false); }
@@ -123,6 +124,7 @@ function TaskSheetContent({ task, projectId, canEdit, canApprove, currentUserId,
     } finally {
       void qc.invalidateQueries({ queryKey: ["project", projectId] });
       void qc.invalidateQueries({ queryKey: ["task-approvals", projectId] });
+      void qc.invalidateQueries({ queryKey: ["project-activity"] });
       setUploading(false);
       input.value = "";
     }

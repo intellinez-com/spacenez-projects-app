@@ -1,50 +1,57 @@
-Client daily status — 2026-11-20
+Automatic client daily status — 2026-11-20
 
 Workflow
-- The project list shows the latest team report and says when today's report is missing.
-- Projects open on Daily status. Today, This week and So far filter published reports
-  by work date. The reporting calendar is Asia/Kolkata; weeks start on Monday.
-- Admins and assigned project partners choose Post daily update, confirm the work date,
-  enter Work done / progress, and optionally add Next steps and Delays / blockers.
-  A day without work can be reported explicitly with its reason.
-- Clients read reports. Questions and feedback remain in Discussion and task comments.
-- A missing report means the team has not posted one; it does not mean no work happened.
-  The latest earlier report remains clearly dated when today's report is absent.
-- Files shared in the selected period use their upload date, with the existing private
-  bucket and signed opening. They are not claimed as attachments to a particular report.
-- Overall progress and open task dates are the current task snapshot. There is no
-  historical completion audit from which to calculate tasks completed on a given day.
-- Reports refresh every minute while the screen is active and on window focus.
-  The project Refresh button also checks daily reports.
-- Published reports preserve their author, posting time and text. Post a follow-up
-  report to correct earlier information. Existing reports cannot be edited/deleted
-  through authenticated portal accounts.
+- The client's project list shows the latest recorded project action.
+- Projects open on Daily status. Today, This week and So far filter actual activity
+  by occurrence time. The calendar is Asia/Kolkata; weeks start on Monday.
+- Admins and assigned partners use the normal project controls. Changing a task's
+  status, dates, title, description, stage, priority or owner creates an event.
+  Project stage/status/date/detail edits, file sharing/removal, comments and actual
+  approval requests/decisions also appear automatically.
+- Entries show who acted, when, the affected task/file, and relevant before/after
+  values. Comments and approval feedback are labelled separately from task progress.
+- No daily report needs to be posted. Optional notes/questions use Discussion.
+  Previously published daily reports are preserved as labelled project notes.
+- A day with no recorded activity does not mean no work happened outside the portal.
+- Overall progress and open task dates remain the current task snapshot. A task
+  marked complete in an event is a recorded status action, not proof of physical work.
+- Existing private documents are opened through signed links. Removed files remain
+  named in history but do not get an open-file action.
+- The timeline and project data refresh every minute while active. Successful app
+  mutations invalidate activity immediately; Project Refresh checks it too.
 
-Data and access
-- public.project_daily_updates holds explicit report_date, work_done, next_steps,
-  blockers, created_by and created_at. Multiple reports per work date are supported.
-- RLS uses can_view_project for reads and can_edit_project for publishing.
-  Client accounts cannot publish a team report, including through the direct API.
-- The database stamps authenticated authors/times and rejects future work dates,
-  blank work descriptions and oversized report fields.
-- Existing comments have not been converted into daily reports. Fictional reports
-  exist only in the isolated local preview and browser tests.
+History and access
+- public.project_activity is written only by trusted database triggers. Authenticated
+  users and the service API cannot directly insert, modify or delete event rows.
+- The trigger uses auth.uid() and server time for new events. SQL/service operations
+  without an authenticated actor remain unattributed system events.
+- Viewer RLS uses can_view_project. Client/partner/admin access remains governed by
+  the existing project policies. A visible event's actor can be shown to that reader.
+- No-op edits and task revision changes caused only by files create no extra task
+  events. Source failures/transaction rollbacks also roll back their events.
+- Detailed task-change tracking begins at project_activity_tracking.started_at.
+  Earlier task status transitions cannot be reconstructed from current status or
+  updated_at. The screen displays the tracking start date/time.
+- Historical backfill includes existing file uploads, comments, approval requests/
+  decisions and preserved notes using their stored timestamps and known actors.
+  These entries are labelled Earlier record. No past task completion was invented.
+- The isolated local preview contains fictional activity only; no sample activity
+  was seeded into real client projects.
 
-Applied database migration
+Applied migrations
 Destination: cwhofudilhawuvmhzgdx.
-File: supabase/migrations/20261120102628_project_daily_updates.sql
+20261120102628_project_daily_updates.sql remains applied and its notes are retained.
 SHA-256: b338f838793e542afb3f1231b2d5e240fce4dfb8378e2d99b8d955ec3186e645
-Recorded in portal_migration_private.feature_migrations on 2026-11-20.
-It adds the report table, index, grants, RLS, attribution trigger and report-author
-profile visibility. Existing application and Auth row fingerprints were unchanged.
-Live transactional checks verified admin/partner publishing, client reads, project
-isolation, immutable reports, attribution, date validation and the REST relationship.
-All verification projects/reports were rolled back. No real daily progress was seeded.
+20261120105044_project_activity.sql adds automatic activity and tracking metadata.
+SHA-256: 8e810eecb1fcbfe12dff9f08cfe9ca52c218a259631b78c6d2e1026009175607
+Both are recorded in portal_migration_private.feature_migrations.
 
-The deployment pipeline does not replay this migration. Before adopting Supabase
-CLI database pushes, reconcile its migration history for this file and the original
-applied migrations described in MIGRATION-STATUS.txt; do not replay them on production.
+Live transactional checks verified real admin/partner task edits, before/after
+statuses, no-op suppression, file/comment capture, approval RPC actor attribution,
+client reads, project isolation, denied fabricated/rewritten events, project deletion
+cascades and REST relationship embeds. All temporary records were rolled back.
+Existing application/Auth row and manual-note fingerprints remained unchanged.
 
-Operational requirement
-Assign someone on the delivery team to post actual progress each workday. The app
-displays what the team publishes; the planning spreadsheet is not evidence of work done.
+The deployment pipeline does not replay these migrations. Before adopting Supabase
+CLI database pushes, reconcile its migration history for these files and the original
+applied migrations in MIGRATION-STATUS.txt. Do not replay them on production.
