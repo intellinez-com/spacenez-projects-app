@@ -30,7 +30,7 @@ function ResetPage() {
     navigate({ to: "/dashboard" });
   }
   return (
-    <div className="grid min-h-screen place-items-center bg-background px-4">
+    <div className="grid min-h-dvh place-items-center bg-background px-4 py-6">
       <div className="w-full max-w-sm">
         <BrandMark className="h-9" alt="Spacenez Track" />
         <form onSubmit={submit} className="mt-8 space-y-4 rounded-xl border bg-card p-6 shadow-soft">

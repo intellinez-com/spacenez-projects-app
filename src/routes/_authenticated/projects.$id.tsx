@@ -61,31 +61,31 @@ function ProjectPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
-      <Link to="/dashboard" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+    <div className="mx-auto min-w-0 max-w-7xl px-4 py-5 sm:px-6 sm:py-8">
+      <Link to="/dashboard" className="inline-flex min-h-11 items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="h-4 w-4" /> All projects
       </Link>
       <div className="mt-4 flex flex-wrap items-end justify-between gap-6">
-        <div>
-          <p className="eyebrow">{project.project_type}{project.client_brand || project.client_name ? ` · ${project.client_brand || project.client_name}` : ""}</p>
-          <h1 className="mt-1 text-4xl">{project.name}</h1>
+        <div className="min-w-0 max-w-full">
+          <p className="eyebrow [overflow-wrap:anywhere]">{project.project_type}{project.client_brand || project.client_name ? ` · ${project.client_brand || project.client_name}` : ""}</p>
+          <h1 className="mt-1 text-3xl [overflow-wrap:anywhere] sm:text-4xl">{project.name}</h1>
           <p className="mt-2 flex flex-wrap gap-4 text-sm text-muted-foreground">
-            {project.location && <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{project.location}</span>}
+            {project.location && <span className="flex min-w-0 items-start gap-1 [overflow-wrap:anywhere]"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />{project.location}</span>}
             {project.target_date && <span>Handover {format(parseISO(project.target_date), "d MMM yyyy")}</span>}
             <span>{canEdit ? "You can edit" : canApprove ? "View, comment & approve" : "View & comment"}</span>
           </p>
         </div>
         <div className="w-full max-w-sm space-y-2">
-          <div className="flex items-center justify-between text-sm">
+          <div className="flex min-w-0 items-center justify-between gap-3 text-sm">
             {canEdit ? (
               <Select disabled={stageBusy} value={project.current_stage} onValueChange={(value) => void setStage(value)}>
-                <SelectTrigger className="h-8 w-56"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="min-w-0 flex-1"><SelectValue /></SelectTrigger>
                 <SelectContent>{STAGES.map((s) => <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>)}</SelectContent>
               </Select>
             ) : (
-              <span>{stageLabel(project.current_stage)}</span>
+              <span className="min-w-0 break-words">{stageLabel(project.current_stage)}</span>
             )}
-            <span className="font-display text-2xl">{pct}%</span>
+            <span className="shrink-0 font-display text-2xl">{pct}%</span>
           </div>
           <StageTrack current={stageIndex(project.current_stage)} />
           {meetingUrl && <Button asChild variant="outline" size="sm"><a href={meetingUrl} target="_blank" rel="noopener noreferrer"><CalendarDays className="h-4 w-4" /> Schedule a meeting</a></Button>}
@@ -93,7 +93,7 @@ function ProjectPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-8">
-        <TabsList className="h-auto max-w-full flex-wrap justify-start">
+        <TabsList aria-label="Project sections" className="grid h-auto w-full grid-cols-2 gap-1 min-[420px]:grid-cols-3 sm:flex sm:flex-wrap sm:justify-start [&>button]:whitespace-normal">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="table">Work & dates</TabsTrigger>
           {canEdit && <TabsTrigger value="board">Board</TabsTrigger>}
@@ -190,9 +190,9 @@ function FilesTab({ projectId, canEdit, documents, tasks, onChange }: { projectI
   return (
     <div>
       {canEdit && (
-        <label className="mb-4 flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed bg-card p-8 text-sm text-muted-foreground hover:border-oak">
-          <Upload className="h-5 w-5" /> {busy ? "Uploading…" : "Upload drawings, renders, BOQs or photos"}
-          <input type="file" multiple disabled={busy} className="hidden" onChange={(e) => void onFile(e)} />
+        <label className="mb-4 flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed bg-card p-4 text-sm text-muted-foreground hover:border-oak focus-within:ring-2 focus-within:ring-ring sm:p-8">
+          <Upload className="h-5 w-5 shrink-0" /> {busy ? "Uploading…" : "Upload drawings, renders, BOQs or photos"}
+          <input type="file" multiple disabled={busy} className="sr-only" onChange={(e) => void onFile(e)} />
         </label>
       )}
       {documents.length === 0 ? (
@@ -200,13 +200,14 @@ function FilesTab({ projectId, canEdit, documents, tasks, onChange }: { projectI
       ) : (
         <div className="overflow-hidden rounded-xl border bg-card">
           {documents.map((d) => (
-            <div key={d.id} className="flex items-center gap-3 border-b p-3 last:border-0">
-              <FileText className="h-5 w-5 text-oak" />
-              <button onClick={() => openDoc(d.path)} className="flex-1 truncate text-left text-sm font-medium hover:text-oak">{d.name}</button>
-              <span className="hidden text-xs text-muted-foreground sm:inline">{tasks.find((t) => t.id === d.task_id)?.title}</span>
-              <span className="text-xs text-muted-foreground">{fmtSize(d.size)}</span>
-              <span className="text-xs text-muted-foreground">{format(parseISO(d.created_at), "d MMM")}</span>
-              {canEdit && <button disabled={!!removing} onClick={() => void remove(d)} aria-label={`Delete ${d.name}`}><Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" /></button>}
+            <div key={d.id} className="flex min-w-0 items-start gap-3 border-b p-3 last:border-0">
+              <FileText className="mt-3 h-5 w-5 shrink-0 text-oak" />
+              <div className="min-w-0 flex-1">
+                <button onClick={() => openDoc(d.path)} className="min-h-11 w-full text-left text-sm font-medium [overflow-wrap:anywhere] hover:text-oak">{d.name}</button>
+                <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">{tasks.find((t) => t.id === d.task_id)?.title}</p>
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground"><span>{fmtSize(d.size)}</span><span>{format(parseISO(d.created_at), "d MMM")}</span></div>
+              </div>
+              {canEdit && <button className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md hover:bg-muted" disabled={!!removing} onClick={() => void remove(d)} aria-label={`Delete ${d.name}`}><Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" /></button>}
             </div>
           ))}
         </div>
@@ -274,30 +275,30 @@ function TeamTab({ projectId, members, onChange }: { projectId: string; members:
       </p>
       {isPending && <p className="text-sm text-muted-foreground">Loading people…</p>}
       {error && <div><p role="alert" className="text-sm text-destructive">{errorMessage(error, "People could not be loaded.")}</p><Button variant="outline" size="sm" onClick={() => void refetch()}>Retry</Button></div>}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex min-w-0 flex-wrap gap-2">
         <Select disabled={busy || isPending || !!error} value={userId} onValueChange={setUserId}>
-          <SelectTrigger className="w-64"><SelectValue placeholder="Choose a person" /></SelectTrigger>
+          <SelectTrigger className="w-full sm:w-64"><SelectValue placeholder="Choose a person" /></SelectTrigger>
           <SelectContent>{available.map((p) => <SelectItem key={p.id} value={p.id}>{p.full_name ?? p.email}</SelectItem>)}</SelectContent>
         </Select>
         <Select disabled={busy} value={access} onValueChange={setAccess}>
-          <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-full sm:w-36"><SelectValue /></SelectTrigger>
           <SelectContent><SelectItem value="client">Client</SelectItem><SelectItem value="partner">Partner</SelectItem></SelectContent>
         </Select>
-        <Button disabled={busy || !userId || !!error} onClick={() => void add()}>Give access</Button>
+        <Button className="w-full sm:w-auto" disabled={busy || !userId || !!error} onClick={() => void add()}>Give access</Button>
       </div>
       <div className="overflow-hidden rounded-xl border bg-card">
         {members.length === 0 && <p className="p-4 text-sm text-muted-foreground">Nobody has been added yet.</p>}
         {members.map((m) => (
-          <div key={m.id} className="flex items-center gap-3 border-b p-3 last:border-0">
-            <div className="flex-1">
+          <div key={m.id} className="flex flex-wrap items-center gap-2 border-b p-3 last:border-0">
+            <div className="min-w-0 basis-full [overflow-wrap:anywhere] sm:flex-1 sm:basis-0">
               <p className="text-sm font-medium">{m.profile?.full_name}</p>
               <p className="text-xs text-muted-foreground">{m.profile?.email}</p>
             </div>
-            <select aria-label={`Project access for ${m.profile?.full_name ?? m.profile?.email ?? "member"}`} disabled={busy} className="rounded-md border bg-background px-2 py-1 text-sm" value={m.access} onChange={(e) => void change(m.id, e.target.value)}>
+            <select aria-label={`Project access for ${m.profile?.full_name ?? m.profile?.email ?? "member"}`} disabled={busy} className="min-h-11 min-w-0 flex-1 rounded-md border bg-background px-2 py-1 text-base sm:flex-none" value={m.access} onChange={(e) => void change(m.id, e.target.value)}>
               <option value="client">Client</option>
               <option value="partner">Partner</option>
             </select>
-            <button disabled={busy} onClick={() => void remove(m.id)} aria-label={`Remove ${m.profile?.full_name ?? "member"}`}><Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" /></button>
+            <button className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md hover:bg-muted" disabled={busy} onClick={() => void remove(m.id)} aria-label={`Remove ${m.profile?.full_name ?? "member"}`}><Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" /></button>
           </div>
         ))}
       </div>

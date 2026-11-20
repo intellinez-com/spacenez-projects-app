@@ -19,10 +19,30 @@ beforeEach(() => {
 describe("Project details refresh and saving", () => {
   it("refreshes a client's read-only details when server values change", async () => {
     const { rerender } = render(<ProjectDetails project={project} canEdit={false} onChange={vi.fn()} />);
-    expect(screen.getByLabelText("Site / location")).toBeDisabled();
+    expect(screen.getByText("Site A").tagName).toBe("DD");
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
     rerender(<ProjectDetails project={{ ...project, location: "Site B" }} canEdit={false} onChange={vi.fn()} />);
-    await waitFor(() => expect(screen.getByLabelText("Site / location")).toHaveValue("Site B"));
+    await waitFor(() => expect(screen.getByText("Site B").tagName).toBe("DD"));
     expect(screen.queryByRole("button", { name: "Save details" })).not.toBeInTheDocument();
+  });
+
+  it("shows complete client values and only makes a validated Calendly URL clickable", () => {
+    const name = "A long project name that remains readable in the client details view";
+    const location = "A full site address with a building name, floor and delivery instructions";
+    const email = "a.long.client.contact.address@example.test";
+    const meetingUrl = "https://calendly.com/spacenez/project-review";
+    const details = { ...project, name, location, client_email: email, description: "First note\nSecond note", meeting_url: meetingUrl };
+    const { rerender } = render(<ProjectDetails project={details} canEdit={false} onChange={vi.fn()} />);
+    expect(screen.getByText(name).tagName).toBe("DD");
+    expect(screen.getByText(location).tagName).toBe("DD");
+    expect(screen.getByText(email).tagName).toBe("DD");
+    expect(screen.getByText("First note Second note").tagName).toBe("DD");
+    expect(screen.getByRole("link", { name: meetingUrl })).toHaveAttribute("href", meetingUrl);
+    const unsafeUrl = "https://calendly.com.evil.test/book";
+    rerender(<ProjectDetails project={{ ...details, meeting_url: unsafeUrl }} canEdit={false} onChange={vi.fn()} />);
+    expect(screen.getByText(unsafeUrl).tagName).toBe("DD");
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 
   it("preserves a draft and blocks saving after another editor changes the details", () => {

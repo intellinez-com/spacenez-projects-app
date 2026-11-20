@@ -43,16 +43,16 @@ function Dashboard() {
   const inExecution = projects.filter((p) => p.current_stage === "execution").length;
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
+    <div className="mx-auto min-w-0 max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <p className="eyebrow">{me?.isAdmin ? "Studio overview" : "Your projects"}</p>
-          <h1 className="mt-1 text-4xl">Projects</h1>
+          <h1 className="mt-1 text-3xl sm:text-4xl">Projects</h1>
         </div>
-        {me?.isAdmin && <div className="flex flex-wrap gap-2"><ProjectImportDialog /><NewProjectDialog /></div>}
+        {me?.isAdmin && <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap"><ProjectImportDialog /><NewProjectDialog /></div>}
       </div>
 
-      {!isError && !isLoading && <div className="mt-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      {!isError && !isLoading && <div className="mt-6 grid grid-cols-2 gap-3 sm:mt-8 sm:gap-4 lg:grid-cols-4">
         <Stat label="Active projects" value={projects.filter((p) => p.status === "active").length} />
         <Stat label="In execution" value={inExecution} />
         <Stat label="Open tasks" value={tasks.filter((t) => t.status !== "done").length} />
@@ -85,14 +85,14 @@ function Dashboard() {
         ) : isLoading ? (
           <p className="text-muted-foreground">Loading…</p>
         ) : projects.length === 0 ? (
-          <div className="rounded-xl border border-dashed bg-card p-12 text-center">
+          <div className="rounded-xl border border-dashed bg-card px-4 py-10 text-center sm:p-12">
             <p className="font-display text-2xl">No projects yet</p>
             <p className="mt-2 text-muted-foreground">
               {me?.isAdmin ? "Create your first project to get started." : "You'll see projects here once Spacenez shares them with you."}
             </p>
           </div>
         ) : (
-          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid min-w-0 gap-4 sm:gap-5 lg:grid-cols-2 2xl:grid-cols-3">
             {projects.map((p) => {
               const pt = tasks.filter((t) => t.project_id === p.id);
               const pct = progressOf(pt);
@@ -101,19 +101,19 @@ function Dashboard() {
                   key={p.id}
                   to="/projects/$id"
                   params={{ id: p.id }}
-                  className="group rounded-xl border bg-card p-5 shadow-soft transition hover:-translate-y-0.5"
+                  className="group min-w-0 rounded-xl border bg-card p-4 shadow-soft transition-colors sm:p-5"
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <p className="eyebrow">{p.project_type}</p>
-                      <h3 className="mt-1 text-xl group-hover:text-oak">{p.name}</h3>
+                      <h3 className="mt-1 break-words text-xl group-hover:text-oak">{p.name}</h3>
                     </div>
-                    <span className="font-display text-2xl">{pct}%</span>
+                    <span className="shrink-0 font-display text-2xl">{pct}%</span>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                    {p.client_name && <span>{p.client_name}</span>}
-                    {p.location && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{p.location}</span>}
-                    {p.target_date && <span className="flex items-center gap-1"><CalendarDays className="h-3 w-3" />{format(parseISO(p.target_date), "d MMM yyyy")}</span>}
+                    {p.client_name && <span className="min-w-0 break-words">{p.client_name}</span>}
+                    {p.location && <span className="flex min-w-0 max-w-full items-start gap-1"><MapPin className="mt-0.5 h-3 w-3 shrink-0" /><span className="min-w-0 break-words">{p.location}</span></span>}
+                    {p.target_date && <span className="flex items-center gap-1 whitespace-nowrap"><CalendarDays className="h-3 w-3 shrink-0" />{format(parseISO(p.target_date), "d MMM yyyy")}</span>}
                   </div>
                   <div className="mt-5">
                     <StageTrack current={stageIndex(p.current_stage)} />
@@ -133,7 +133,7 @@ function Dashboard() {
 
 function Stat({ label, value, warn }: { label: string; value: number; warn?: boolean }) {
   return (
-    <div className="rounded-xl border bg-card p-4">
+    <div className="min-w-0 rounded-xl border bg-card p-3 sm:p-4">
       <p className="flex items-center gap-1 text-xs text-muted-foreground">
         {warn && <AlertTriangle className="h-3 w-3 text-destructive" />} {label}
       </p>
@@ -201,14 +201,14 @@ function NewProjectDialog() {
   return (
     <Dialog open={open} onOpenChange={(value) => { if (!submitting.current) setOpen(value); }}>
       <DialogTrigger asChild>
-        <Button><Plus className="h-4 w-4" /> New project</Button>
+        <Button className="w-full sm:w-auto"><Plus className="h-4 w-4" /> New project</Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader><DialogTitle className="font-display text-2xl">New project</DialogTitle></DialogHeader>
-        {creationError && <p role="alert" className="text-sm text-destructive">{creationError}</p>}
-        {createdProjectId ? <Button asChild><Link to="/projects/$id" params={{ id: createdProjectId }} onClick={() => setOpen(false)}>Open created project</Link></Button> : <form onSubmit={create} className="space-y-3">
+        {creationError && <p role="alert" className="break-words text-sm text-destructive">{creationError}</p>}
+        {createdProjectId ? <Button asChild className="w-full sm:w-auto"><Link to="/projects/$id" params={{ id: createdProjectId }} onClick={() => setOpen(false)}>Open created project</Link></Button> : <form onSubmit={create} className="min-w-0 space-y-3">
           <div className="space-y-1.5"><Label>Project name</Label><Input required value={form.name} onChange={set("name")} placeholder="3BHK — Sector 70, Mohali" /></div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5"><Label>Client</Label><Input value={form.client_name} onChange={set("client_name")} /></div>
             <div className="space-y-1.5"><Label>Location</Label><Input value={form.location} onChange={set("location")} /></div>
           </div>
@@ -219,7 +219,7 @@ function NewProjectDialog() {
               <SelectContent>{PROJECT_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
             </Select>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5"><Label>Start</Label><Input type="date" value={form.start_date} onChange={set("start_date")} /></div>
             <div className="space-y-1.5"><Label>Target handover</Label><Input type="date" value={form.target_date} onChange={set("target_date")} /></div>
           </div>

@@ -51,21 +51,21 @@ function ProjectUpdatesContent({ projectId, canEdit }: { projectId: string; canE
   }
 
   return (
-    <section className="max-w-3xl space-y-6" aria-labelledby="project-updates-heading">
+    <section className="w-full min-w-0 max-w-3xl space-y-6 [overflow-wrap:anywhere]" aria-labelledby="project-updates-heading">
       <h2 id="project-updates-heading" className="text-xl">Project updates and comments</h2>
-      <form onSubmit={post} className="space-y-3">
+      <form onSubmit={post} className="min-w-0 space-y-3">
         <Label htmlFor={`project-update-${projectId}`}>{canEdit ? "Share a project update" : "Leave a comment for the team"}</Label>
-        <Textarea id={`project-update-${projectId}`} rows={3} maxLength={10_000} disabled={posting} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={canEdit ? "What changed, and what happens next?" : "Ask a question or share your feedback…"} />
+        <Textarea id={`project-update-${projectId}`} className="min-h-28 min-w-0 resize-y text-base md:text-sm" rows={3} maxLength={10_000} disabled={posting} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={canEdit ? "What changed, and what happens next?" : "Ask a question or share your feedback…"} />
         {postError && <p role="alert" className="text-sm text-destructive">{postError}</p>}
-        <Button type="submit" disabled={posting || !draft.trim()}>{posting ? "Posting…" : canEdit ? "Post update" : "Post comment"}</Button>
+        <Button type="submit" className="min-h-11 w-full whitespace-normal sm:w-auto" disabled={posting || !draft.trim()}>{posting ? "Posting…" : canEdit ? "Post update" : "Post comment"}</Button>
       </form>
       <div>
         {updates.isPending ? <p role="status" className="text-sm text-muted-foreground">Loading updates…</p> : updates.isError ? (
-          <div role="alert" className="space-y-2 text-sm"><p>Could not load project updates. {errorMessage(updates.error)}</p><Button variant="outline" size="sm" onClick={() => void updates.refetch()}>Retry updates</Button></div>
+          <div role="alert" className="space-y-2 text-sm"><p>Could not load project updates. {errorMessage(updates.error)}</p><Button variant="outline" size="sm" className="min-h-11 whitespace-normal text-sm" onClick={() => void updates.refetch()}>Retry updates</Button></div>
         ) : updates.data.length === 0 ? <p className="text-sm text-muted-foreground">{page === 0 ? "No updates or comments yet." : "No older updates."}</p> : <UpdateList updates={updates.data} />}
-        <div className="mt-4 flex gap-2">
-          {page > 0 && <Button variant="outline" size="sm" disabled={updates.isFetching} onClick={() => setPage((current) => current - 1)}>Newer updates</Button>}
-          {updates.data?.length === 50 && <Button variant="outline" size="sm" disabled={updates.isFetching} onClick={() => setPage((current) => current + 1)}>Older updates</Button>}
+        <div className="mt-4 flex flex-wrap gap-2">
+          {page > 0 && <Button variant="outline" size="sm" className="min-h-11 min-w-0 flex-1 whitespace-normal text-sm sm:flex-none" disabled={updates.isFetching} onClick={() => setPage((current) => current - 1)}>Newer updates</Button>}
+          {updates.data?.length === 50 && <Button variant="outline" size="sm" className="min-h-11 min-w-0 flex-1 whitespace-normal text-sm sm:flex-none" disabled={updates.isFetching} onClick={() => setPage((current) => current + 1)}>Older updates</Button>}
         </div>
       </div>
     </section>
@@ -75,25 +75,25 @@ function ProjectUpdatesContent({ projectId, canEdit }: { projectId: string; canE
 export function RecentProjectUpdates({ projectId, onOpenUpdates }: { projectId: string; onOpenUpdates: () => void }) {
   const updates = useQuery({ queryKey: ["project-updates", projectId, "recent"], queryFn: () => loadProjectUpdates(projectId, 0, 5) });
   return (
-    <section aria-labelledby="recent-updates-heading" className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2"><h2 id="recent-updates-heading" className="text-lg">Latest updates</h2><Button variant="outline" size="sm" onClick={onOpenUpdates}>All updates and comments</Button></div>
+    <section aria-labelledby="recent-updates-heading" className="min-w-0 space-y-3 [overflow-wrap:anywhere]">
+      <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between"><h2 id="recent-updates-heading" className="text-lg">Latest updates</h2><Button variant="outline" size="sm" className="min-h-11 max-w-full whitespace-normal text-sm" onClick={onOpenUpdates}>All updates and comments</Button></div>
       {updates.isPending ? <p role="status" className="text-sm text-muted-foreground">Loading updates…</p> : updates.isError ? (
-        <div role="alert" className="space-y-2 text-sm"><p>Could not load recent updates.</p><Button variant="outline" size="sm" onClick={() => void updates.refetch()}>Retry updates</Button></div>
+        <div role="alert" className="space-y-2 text-sm"><p>Could not load recent updates.</p><Button variant="outline" size="sm" className="min-h-11 whitespace-normal text-sm" onClick={() => void updates.refetch()}>Retry updates</Button></div>
       ) : updates.data.length === 0 ? <p className="text-sm text-muted-foreground">No updates or comments yet.</p> : <UpdateList updates={updates.data} />}
     </section>
   );
 }
 
 function UpdateList({ updates }: { updates: ProjectUpdate[] }) {
-  return <ul className="divide-y rounded-lg border">{updates.map((update) => {
+  return <ul className="min-w-0 divide-y rounded-lg border">{updates.map((update) => {
     const date = parseISO(update.created_at);
-    return <li key={update.id} className="space-y-1 p-4">
-      <div className="flex flex-wrap justify-between gap-x-4 gap-y-1 text-sm">
-        <span className="font-medium">{update.author?.full_name || update.author?.email || "Project member"}</span>
+    return <li key={update.id} className="min-w-0 space-y-2 p-3 [overflow-wrap:anywhere] sm:p-4">
+      <div className="flex min-w-0 flex-col gap-x-4 gap-y-1 text-sm sm:flex-row sm:flex-wrap sm:justify-between">
+        <span className="min-w-0 font-medium">{update.author?.full_name || update.author?.email || "Project member"}</span>
         <time dateTime={isValid(date) ? update.created_at : undefined} className="text-xs text-muted-foreground">{isValid(date) ? format(date, "d MMM yyyy, h:mm a") : "Date unavailable"}</time>
       </div>
       <p className="text-xs text-muted-foreground">{update.task_id ? `Comment on ${update.task?.title || "a project task"}` : "Project update or comment"}</p>
-      <p className="whitespace-pre-wrap break-words text-sm">{update.body}</p>
+      <p className="whitespace-pre-wrap text-sm leading-relaxed [overflow-wrap:anywhere]">{update.body}</p>
     </li>;
   })}</ul>;
 }

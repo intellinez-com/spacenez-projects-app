@@ -13,10 +13,10 @@ const task = {
   priority: "medium", content_revision: 1, assignee_id: null, start_date: null, due_date: null,
 } as Task;
 
-function show(overrides: { onUpdate?: (id: string, patch: Partial<Task>) => Promise<void>; onDelete?: (id: string) => Promise<void>; onClose?: () => void } = {}) {
+function show(overrides: { task?: Task; canEdit?: boolean; onUpdate?: (id: string, patch: Partial<Task>) => Promise<void>; onDelete?: (id: string) => Promise<void>; onClose?: () => void } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={client}>
-    <TaskSheet task={task} projectId="project" currentUserId="client" canEdit canApprove={false} people={[]} docs={[]} onClose={overrides.onClose ?? vi.fn()} onUpdate={overrides.onUpdate ?? vi.fn().mockResolvedValue(undefined)} onDelete={overrides.onDelete ?? vi.fn().mockResolvedValue(undefined)} />
+    <TaskSheet task={overrides.task ?? task} projectId="project" currentUserId="client" canEdit={overrides.canEdit ?? true} canApprove={false} people={[]} docs={[]} onClose={overrides.onClose ?? vi.fn()} onUpdate={overrides.onUpdate ?? vi.fn().mockResolvedValue(undefined)} onDelete={overrides.onDelete ?? vi.fn().mockResolvedValue(undefined)} />
   </QueryClientProvider>);
 }
 
@@ -32,6 +32,19 @@ beforeEach(() => {
 });
 
 describe("task sheet failures", () => {
+  it("exposes the full read-only task content to clients without edit controls", () => {
+    const title = "Detailed client layout review with materials and installation notes ".repeat(4).trim();
+    const description = "Review the full design description and the detailed acceptance criteria before responding. ".repeat(6).trim();
+    show({ task: { ...task, title, description, stage: "interior_design" }, canEdit: false });
+    expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
+    expect(screen.getByText(description)).toBeInTheDocument();
+    expect(screen.getByText("Interior Design & Materials")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Task title" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete task" })).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Write a comment…")).toBeEnabled();
+  });
+
   it("keeps the task open when deletion fails", async () => {
     const onClose = vi.fn();
     show({ onDelete: vi.fn().mockRejectedValue(new Error("Delete denied")), onClose });

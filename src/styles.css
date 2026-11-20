@@ -118,3 +118,17 @@
 @utility eyebrow {
   @apply text-xs uppercase tracking-[0.18em] text-muted-foreground;
 }
+
+/* Keep editable text at a readable size on touch devices, including tablets. */
+@media (pointer: coarse) {
+  input, textarea, select {
+    font-size: 1rem;
+  }
+  .touch-target {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select {
+    min-height: 2.75rem;
+  }
+}

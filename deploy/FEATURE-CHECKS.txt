@@ -69,6 +69,23 @@ Current comments are client-visible; internal-only notes are not implemented.
 Task title/description/stage and task-document changes advance approval revision.
 Status, priority, dates and assignee changes alone do not advance that content revision.
 
+Responsive client layouts — 2026-11-20
+[x] Local Chromium browser checks at 320x568, 375x812, 390x844, 667x375,
+    768x1024, 1024x768 and 1366x900: sign-in/reset request, project list,
+    Overview, Work & dates, Updates, Photos & files, Approvals and Details.
+    No horizontal page overflow or browser errors in the 73 client-flow checks.
+[x] Client task sheets stay within the viewport, with wrapping read-only details,
+    private file links, comments and touch-sized approval controls. Comment posting
+    and requests for changes were exercised only against fictional in-memory data.
+[x] Eleven additional checks cover long unbroken names/addresses/filenames,
+    opening a sample private file in a new tab, scrollable short-screen dialogs,
+    bounded long-option menus, and task-add drafts surviving tablet rotation.
+[x] Wide touch screens retain 44px form/action targets; editable text remains 16px
+    on coarse-pointer devices. Upload inputs are keyboard reachable with visible focus.
+[ ] After deployment, spot-check the real portal on iPhone Safari and Android,
+    including keyboard opening, photo/file viewing and tablet rotation. The local
+    checks use Chromium viewport/touch emulation, not physical-device certification.
+
 Production cutover
 [ ] Build/deploy through infra, configure HTTPS/DNS for app.spacenez.com and verify
     browser/server configuration points to the same migrated destination.

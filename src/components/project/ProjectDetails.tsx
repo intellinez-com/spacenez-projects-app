@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
+import { format, isValid, parseISO } from "date-fns";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { PROJECT_TYPES } from "@/lib/constants";
 import { importProjectFieldsSchema, type ImportProjectFields } from "@/lib/project-import";
-import { normalizeMeetingUrl } from "@/lib/meeting-url";
+import { normalizeMeetingUrl, safeMeetingUrl } from "@/lib/meeting-url";
 import { errorMessage } from "@/lib/errors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -77,30 +78,61 @@ export function ProjectDetails({ project, canEdit, onChange }: {
     finally { setBusy(false); }
   }
 
+  if (!canEdit) {
+    const dateText = (value: string | null) => {
+      if (!value) return null;
+      const date = parseISO(value);
+      return isValid(date) ? format(date, "d MMM yyyy") : value;
+    };
+    const bookingLink = safeMeetingUrl(project.meeting_url);
+    const values = [
+      { label: "Project name", value: project.name, wide: true },
+      { label: "Client brand", value: project.client_brand },
+      { label: "Client contact", value: project.client_name },
+      { label: "Client email", value: project.client_email },
+      { label: "Site / location", value: project.location },
+      { label: "Start date", value: dateText(project.start_date) },
+      { label: "Target handover", value: dateText(project.target_date) },
+      { label: "Project type", value: project.project_type },
+      { label: "Calendly booking link", value: project.meeting_url, wide: true },
+      { label: "Project notes", value: project.description, wide: true },
+    ];
+    return <section aria-label="Project details" className="w-full min-w-0 max-w-2xl">
+      <dl className="grid min-w-0 gap-5 text-sm sm:grid-cols-2">
+        {values.map(({ label, value, wide }) => <div key={label} className={`min-w-0 ${wide ? "sm:col-span-2" : ""}`}>
+          <dt className="text-muted-foreground">{label}</dt>
+          <dd className="mt-1 whitespace-pre-wrap leading-relaxed [overflow-wrap:anywhere]">
+            {label === "Calendly booking link" && bookingLink ? <a href={bookingLink} target="_blank" rel="noopener noreferrer" className="inline-block min-h-11 max-w-full py-2 text-oak underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{value}</a> : value?.trim() ? value : "Not set"}
+          </dd>
+        </div>)}
+      </dl>
+    </section>;
+  }
+
   const field = (label: string, key: keyof ImportProjectFields, type = "text") => (
-    <div className="space-y-1.5">
+    <div className="min-w-0 space-y-1.5">
       <Label htmlFor={`project-${key}`}>{label}</Label>
-      <Input id={`project-${key}`} type={type} value={form[key]} onChange={change(key)} />
+      <Input id={`project-${key}`} className="min-w-0" type={type} value={form[key]} onChange={change(key)} />
     </div>
   );
   return (
-    <form onSubmit={save} className="max-w-2xl space-y-4">
-      <fieldset disabled={!canEdit || busy} className="space-y-4">
+    <form onSubmit={save} className="w-full min-w-0 max-w-2xl space-y-4 [overflow-wrap:anywhere]">
+      <fieldset disabled={!canEdit || busy} className="min-w-0 space-y-4">
         {field("Project name", "name")}
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid min-w-0 gap-4 sm:grid-cols-2">
           {field("Client brand", "client_brand")}{field("Client contact", "client_name")}
           {field("Client email", "client_email", "email")}{field("Site / location", "location")}
           {field("Start date", "start_date", "date")}{field("Target handover", "target_date", "date")}
         </div>
-        <div className="space-y-1.5">
+        <div className="min-w-0 space-y-1.5">
           <Label htmlFor="project-type">Project type</Label>
-          <select id="project-type" className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={form.project_type} onChange={change("project_type")}>
+          <select id="project-type" className="h-11 w-full min-w-0 rounded-md border bg-background px-3 text-base md:text-sm" value={form.project_type} onChange={change("project_type")}>
             {PROJECT_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
           </select>
         </div>
         {field("Calendly booking link", "meeting_url", "url")}
         <p className="text-sm text-muted-foreground">Add the booking link to show “Schedule a meeting” on this project.</p>
-        <div className="space-y-1.5">
+        <div className="min-w-0 space-y-1.5">
           <Label htmlFor="project-description">Project notes</Label>
           <Textarea id="project-description" rows={5} value={form.description} onChange={change("description")} />
         </div>
@@ -108,10 +140,10 @@ export function ProjectDetails({ project, canEdit, onChange }: {
       <p className="text-sm text-muted-foreground">Contact details do not grant portal access. An admin manages access in the Team tab.</p>
       {conflict && <div role="alert" className="space-y-2 text-sm">
         <p>Project details changed while you were editing. Load the latest details before saving.</p>
-        <Button type="button" variant="outline" onClick={() => { setForm(serverFields); setBaseKey(serverKey); setError(null); }}>Load latest details</Button>
+        <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => { setForm(serverFields); setBaseKey(serverKey); setError(null); }}>Load latest details</Button>
       </div>}
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-      {canEdit && <Button type="submit" disabled={busy || conflict || !dirty}>{busy ? "Saving…" : "Save details"}</Button>}
+      {canEdit && <Button type="submit" className="w-full sm:w-auto" disabled={busy || conflict || !dirty}>{busy ? "Saving…" : "Save details"}</Button>}
     </form>
   );
 }

@@ -73,23 +73,23 @@ export function ProjectImportDialog() {
       if (value && result) { setResult(null); setPlan(null); setProject(null); setError(""); }
       setOpen(value);
     }}>
-      <DialogTrigger asChild><Button variant="outline"><Upload className="h-4 w-4" /> Import project plan</Button></DialogTrigger>
-      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+      <DialogTrigger asChild><Button variant="outline" className="w-full sm:w-auto"><Upload className="h-4 w-4" /> Import project plan</Button></DialogTrigger>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] min-w-0 max-w-3xl overflow-y-auto [overflow-wrap:anywhere]">
         <DialogHeader>
           <DialogTitle>Import project plan</DialogTitle>
           <DialogDescription>Choose the prepared project JSON, review its details, then create the project and its planned approvals.</DialogDescription>
         </DialogHeader>
         {result ? (
-          <div className="space-y-4" role="status">
+          <div className="min-w-0 space-y-4" role="status">
             <p>{result.created ? "Project imported." : "This plan was already imported. The existing project has been kept without changing later edits."}</p>
             <p className="text-sm">{result.task_count} tasks and {result.approval_plan_count} planned approval records.</p>
             <p className="text-sm">{result.client_linked ? "The existing client account has been added to this project." : "Client access is pending. Create or confirm the client account in People, then add that person as a client in the project’s Team tab."}</p>
             <p className="text-sm text-muted-foreground">Add delivery partners in Team and assign tasks before work begins.</p>
-            <Button asChild><Link to="/projects/$id" params={{ id: result.project_id }} onClick={() => setOpen(false)}>Open project</Link></Button>
+            <Button asChild className="w-full sm:w-auto"><Link to="/projects/$id" params={{ id: result.project_id }} onClick={() => setOpen(false)}>Open project</Link></Button>
           </div>
         ) : (
-          <form onSubmit={importPlan} className="space-y-5">
-            <div className="space-y-1.5">
+          <form onSubmit={importPlan} className="min-w-0 space-y-5">
+            <div className="min-w-0 space-y-1.5">
               <Label htmlFor="project-plan-file">Prepared JSON file</Label>
               <Input id="project-plan-file" type="file" accept=".json,application/json" disabled={busy} onChange={(event) => void chooseFile(event.target.files?.[0])} />
               {reading && <p className="text-sm" role="status">Reading file…</p>}
@@ -108,29 +108,29 @@ export function ProjectImportDialog() {
                   ))}
                 </div>
                 {plan.target_backend_ref !== backendRef && <div className="space-y-2 rounded-md border p-3 text-sm"><p>This file was prepared for backend <code>{plan.target_backend_ref}</code>. Import will use this app’s configured backend <code>{backendRef}</code>.</p><label className="flex items-start gap-2"><input type="checkbox" disabled={busy} checked={destinationConfirmed} onChange={(event) => setDestinationConfirmed(event.target.checked)} /><span>I confirm this is the intended destination for the migrated project.</span></label></div>}
-                <fieldset disabled={busy} className="space-y-3">
+                <fieldset disabled={busy} className="min-w-0 space-y-3">
                   <div className="space-y-1.5"><Label htmlFor="import-project-name">Project name</Label><Input id="import-project-name" required maxLength={200} value={project.name} onChange={(event) => update("name", event.target.value)} /></div>
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid min-w-0 gap-3 sm:grid-cols-2">
                     <Field id="import-client-brand" label="Client brand" value={project.client_brand} onChange={(value) => update("client_brand", value)} />
                     <Field id="import-client-name" label="Client contact" value={project.client_name} onChange={(value) => update("client_name", value)} />
                     <Field id="import-client-email" label="Client email" type="email" value={project.client_email} onChange={(value) => update("client_email", value)} />
                     <Field id="import-location" label="Location" value={project.location} onChange={(value) => update("location", value)} />
-                    <div className="space-y-1.5"><Label htmlFor="import-project-type">Project type</Label><select id="import-project-type" className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={project.project_type} onChange={(event) => update("project_type", event.target.value)}>{PROJECT_TYPES.map((type) => <option key={type}>{type}</option>)}</select></div>
+                    <div className="min-w-0 space-y-1.5"><Label htmlFor="import-project-type">Project type</Label><select id="import-project-type" className="h-10 w-full min-w-0 rounded-md border bg-background px-3 text-base md:text-sm" value={project.project_type} onChange={(event) => update("project_type", event.target.value)}>{PROJECT_TYPES.map((type) => <option key={type}>{type}</option>)}</select></div>
                     <Field id="import-meeting-url" label="Calendly booking link (optional)" type="url" value={project.meeting_url} onChange={(value) => update("meeting_url", value)} />
                     <Field id="import-start-date" label="Project start (optional)" type="date" value={project.start_date} onChange={(value) => update("start_date", value)} />
                     <Field id="import-target-date" label="Target handover (optional)" type="date" value={project.target_date} onChange={(value) => update("target_date", value)} />
                   </div>
                   <div className="space-y-1.5"><Label htmlFor="import-project-notes">Additional project notes</Label><Textarea id="import-project-notes" value={project.description} onChange={(event) => update("description", event.target.value)} /></div>
                 </fieldset>
-                <details className="text-sm">
-                  <summary className="cursor-pointer">Review tasks and source notes</summary>
-                  <div className="mt-3 overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b"><th className="py-2 pr-3">ID</th><th className="py-2 pr-3">Task</th><th className="py-2 pr-3">Stage</th><th className="py-2">Start</th></tr></thead><tbody>{plan.tasks.map((row) => <tr key={row.source_id} className="border-b"><td className="py-2 pr-3">{row.source_id}</td><td className="py-2 pr-3">{row.proposed_task.title}<p className="text-xs text-muted-foreground">{row.proposed_task.description}</p></td><td className="py-2 pr-3">{stageLabel(row.proposed_task.stage)}</td><td className="whitespace-nowrap py-2">{row.proposed_task.start_date ?? "Unscheduled"}</td></tr>)}</tbody></table></div>
+                <details className="min-w-0 text-sm">
+                  <summary className="cursor-pointer py-2">Review tasks and source notes</summary>
+                  <div role="region" aria-label="Import task preview" tabIndex={0} className="mt-3 min-w-0 overflow-x-auto"><table className="w-full min-w-[560px] text-left text-sm"><thead><tr className="border-b"><th className="py-2 pr-3">ID</th><th className="py-2 pr-3">Task</th><th className="py-2 pr-3">Stage</th><th className="py-2">Start</th></tr></thead><tbody>{plan.tasks.map((row) => <tr key={row.source_id} className="border-b"><td className="max-w-28 py-2 pr-3">{row.source_id}</td><td className="min-w-48 py-2 pr-3">{row.proposed_task.title}<p className="text-xs text-muted-foreground">{row.proposed_task.description}</p></td><td className="py-2 pr-3">{stageLabel(row.proposed_task.stage)}</td><td className="whitespace-nowrap py-2">{row.proposed_task.start_date ?? "Unscheduled"}</td></tr>)}</tbody></table></div>
                   <p className="mt-3">Workbook notes will be kept for review:</p>
                   <ul className="mt-2 list-disc space-y-1 pl-5">{plan.workbook_workflow_notes.items.map((item) => <li key={`${item.source_sheet}:${item.source_cell}`}>{item.text}</li>)}</ul>
                   <p className="mt-3">{plan.overview_material_selection_note.text}: {plan.overview_material_selection_note.note}</p>
                 </details>
                 <p className="text-sm text-muted-foreground">No starter tasks or new accounts will be created. Importing this source again with the same project name, client email and location opens the existing project.</p>
-                <Button type="submit" disabled={busy || reading || (plan.target_backend_ref !== backendRef && !destinationConfirmed)}>{busy ? "Importing…" : "Import project"}</Button>
+                <Button type="submit" className="w-full sm:w-auto" disabled={busy || reading || (plan.target_backend_ref !== backendRef && !destinationConfirmed)}>{busy ? "Importing…" : "Import project"}</Button>
               </>
             )}
           </form>
@@ -141,5 +141,5 @@ export function ProjectImportDialog() {
 }
 
 function Field({ id, label, value, onChange, type = "text" }: { id: string; label: string; value: string; onChange: (value: string) => void; type?: string }) {
-  return <div className="space-y-1.5"><Label htmlFor={id}>{label}</Label><Input id={id} type={type} value={value} onChange={(event) => onChange(event.target.value)} /></div>;
+  return <div className="min-w-0 space-y-1.5"><Label htmlFor={id}>{label}</Label><Input id={id} className="min-w-0" type={type} value={value} onChange={(event) => onChange(event.target.value)} /></div>;
 }

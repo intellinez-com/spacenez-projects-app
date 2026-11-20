@@ -62,12 +62,12 @@ function People() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-8">
+    <div className="mx-auto min-w-0 max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
       <p className="eyebrow">Access</p>
-      <h1 className="mt-1 text-4xl">People</h1>
-      <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_340px]">
-        <div className="overflow-hidden rounded-xl border bg-card">
-          <table className="w-full text-sm">
+      <h1 className="mt-1 text-3xl sm:text-4xl">People</h1>
+      <div className="mt-6 grid min-w-0 gap-6 sm:mt-8 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div role="region" aria-label="People list" tabIndex={0} className="min-w-0 overflow-x-auto rounded-xl border bg-card">
+          <table className="w-full min-w-[520px] text-sm">
             <thead className="bg-muted text-left text-xs text-muted-foreground">
               <tr><th className="p-3">Name</th><th className="p-3">Email</th><th className="p-3">Company</th><th className="p-3">Role</th></tr>
             </thead>
@@ -76,20 +76,20 @@ function People() {
               {error && <tr><td colSpan={4} className="p-3"><p role="alert" className="text-destructive">{errorMessage(error, "People could not be loaded.")}</p><Button size="sm" variant="outline" onClick={() => void refetch()}>Retry</Button></td></tr>}
               {!error && data?.map((p) => (
                 <tr key={p.id} className="border-t">
-                  <td className="p-3 font-medium">{p.full_name}</td>
-                  <td className="p-3 text-muted-foreground">{p.email}</td>
-                  <td className="p-3 text-muted-foreground">{p.company}</td>
+                  <td className="max-w-48 p-3 font-medium [overflow-wrap:anywhere]">{p.full_name}</td>
+                  <td className="max-w-60 p-3 text-muted-foreground [overflow-wrap:anywhere]">{p.email}</td>
+                  <td className="max-w-48 p-3 text-muted-foreground [overflow-wrap:anywhere]">{p.company}</td>
                   <td className="p-3 capitalize">{p.roles.join(", ") || "—"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <form onSubmit={submit} className="space-y-3 rounded-xl border bg-card p-5 shadow-soft">
+        <form onSubmit={submit} className="min-w-0 space-y-3 rounded-xl border bg-card p-4 shadow-soft sm:p-5">
           <h2 className="flex items-center gap-2 text-xl"><UserPlus className="h-5 w-5" /> Add person</h2>
-          <div className="space-y-1.5"><Label>Full name</Label><Input required value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} /></div>
-          <div className="space-y-1.5"><Label>Email</Label><Input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
-          <div className="space-y-1.5"><Label>Company</Label><Input value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} /></div>
+          <div className="min-w-0 space-y-1.5"><Label htmlFor="person-full-name">Full name</Label><Input id="person-full-name" required value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} /></div>
+          <div className="min-w-0 space-y-1.5"><Label htmlFor="person-email">Email</Label><Input id="person-email" type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
+          <div className="min-w-0 space-y-1.5"><Label htmlFor="person-company">Company</Label><Input id="person-company" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} /></div>
           <div className="space-y-1.5">
             <Label>Role</Label>
             <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v as typeof form.role })}>

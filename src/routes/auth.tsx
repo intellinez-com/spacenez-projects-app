@@ -46,7 +46,7 @@ function AuthPage() {
   }
 
   return (
-    <div className="grid min-h-screen place-items-center bg-background px-4">
+    <div className="grid min-h-dvh place-items-center bg-background px-4 py-6">
       <div className="w-full max-w-sm">
         <Link to="/" className="inline-block">
           <BrandMark className="h-10" alt="Spacenez Track" />
@@ -71,7 +71,7 @@ function AuthPage() {
           </Button>
           <button
             type="button"
-            className="w-full text-center text-sm text-muted-foreground hover:text-foreground"
+            className="min-h-11 w-full text-center text-sm text-muted-foreground hover:text-foreground"
             onClick={() => setMode(mode === "signin" ? "forgot" : "signin")}
           >
             {mode === "signin" ? "Forgot password?" : "Back to sign in"}

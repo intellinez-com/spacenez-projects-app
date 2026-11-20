@@ -26,12 +26,12 @@ function Shell() {
     navigate({ to: "/auth", replace: true });
   }
 
-  const nav = "flex items-center gap-2 rounded-md px-3 py-2 text-sm text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground";
+  const nav = "flex min-h-11 items-center gap-2 rounded-md px-3 py-2 text-sm text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground";
   const active = { className: "bg-sidebar-accent text-sidebar-accent-foreground" };
 
   return (
-    <div className="flex min-h-screen">
-      <aside className="hidden w-60 shrink-0 flex-col bg-sidebar p-4 md:flex">
+    <div className="flex min-h-dvh">
+      <aside className="hidden w-60 shrink-0 flex-col bg-sidebar p-4 lg:flex">
         <Link to="/dashboard" className="px-3 py-2">
           <BrandMark variant="full-light" className="h-9" alt="Spacenez Track" />
         </Link>
@@ -54,12 +54,13 @@ function Shell() {
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between border-b bg-card px-4 py-3 md:hidden">
-          <Link to="/dashboard"><BrandMark className="h-6" alt="Spacenez Track" /></Link>
-          <div className="flex gap-3 text-sm">
-            {me?.isAdmin && <Link to="/people">People</Link>}
-            <button onClick={signOut}>Sign out</button>
-          </div>
+        <header className="flex flex-wrap items-center justify-between gap-x-4 border-b bg-card px-4 py-2 lg:hidden">
+          <Link to="/dashboard" aria-label="Spacenez projects" className="flex min-h-11 items-center"><BrandMark className="h-6 max-w-full" alt="Spacenez Track" /></Link>
+          <nav aria-label="Main navigation" className="flex flex-wrap items-center gap-1 text-sm">
+            <Link to="/dashboard" className="flex min-h-11 items-center rounded-md px-2 hover:bg-muted" activeProps={{ className: "bg-muted" }}>Projects</Link>
+            {me?.isAdmin && <Link to="/people" className="flex min-h-11 items-center rounded-md px-2 hover:bg-muted" activeProps={{ className: "bg-muted" }}>People</Link>}
+            <button onClick={signOut} className="min-h-11 rounded-md px-2 hover:bg-muted">Sign out</button>
+          </nav>
         </header>
         <main className="min-w-0 flex-1">
           <Outlet />
