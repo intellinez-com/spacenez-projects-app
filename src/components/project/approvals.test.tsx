@@ -1,7 +1,7 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { canRespondToApproval, TaskApprovalPanel } from "./approvals";
+import { ApprovalOverview, canRespondToApproval, TaskApprovalPanel } from "./approvals";
 import type { Task } from "./data";
 
 const mocks = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn() }));
@@ -14,13 +14,17 @@ const approval = {
   snapshot: { version: 1, task: { title: "Layout", stage: "layout_2d", description: "Submitted layout" }, documents: [] },
 };
 
-function show(rows = [approval], props: { canEdit?: boolean; canApprove?: boolean; currentUserId?: string } = {}) {
+function mockApprovalRows(readRows: () => typeof approval[]) {
   mocks.from.mockImplementation((table: string) => {
     const chain: any = {};
     for (const method of ["select", "eq"]) chain[method] = () => chain;
-    chain.order = async () => ({ data: table === "task_approvals" ? rows : [], error: null });
+    chain.order = async () => ({ data: table === "task_approvals" ? readRows() : [], error: null });
     return chain;
   });
+}
+
+function show(rows = [approval], props: { canEdit?: boolean; canApprove?: boolean; currentUserId?: string } = {}) {
+  mockApprovalRows(() => rows);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={client}>
     <TaskApprovalPanel task={task} projectId="project" currentUserId={props.currentUserId ?? "client"} canEdit={props.canEdit ?? false} canApprove={props.canApprove ?? true} people={[]} />
@@ -51,7 +55,7 @@ describe("client review boundaries", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("changed by another editor");
     expect(mocks.rpc).toHaveBeenCalledWith("respond_task_approval", { p_approval_id: "approval", p_decision: "approved", p_feedback: null });
-    expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled());
     expect(screen.getAllByText("Awaiting client review").length).toBeGreaterThan(0);
   });
 
@@ -66,5 +70,53 @@ describe("client review boundaries", () => {
     show([{ ...approval, state: "changes_requested" }], { canEdit: true, canApprove: false });
     expect(await screen.findByRole("button", { name: "Request client review" })).toBeDisabled();
     expect(screen.getByText(/Update the submitted task content or files/)).toBeInTheDocument();
+  });
+
+  it.each(["request", "approved"] as const)("refreshes an already-open project overview after %s", async (action) => {
+    let rows = action === "request" ? [] : [approval];
+    mockApprovalRows(() => rows);
+    mocks.rpc.mockImplementation(async () => {
+      rows = [{ ...approval, state: action === "request" ? "pending" : "approved" }];
+      return { data: rows[0], error: null };
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}>
+      <ApprovalOverview projectId="project" tasks={[task]} onOpen={vi.fn()} />
+      <TaskApprovalPanel task={task} projectId="project" currentUserId={action === "request" ? "partner" : "client"} canEdit={action === "request"} canApprove={action !== "request"} people={[]} />
+    </QueryClientProvider>);
+    const overview = (await screen.findByRole("heading", { name: "Client reviews" })).closest("section");
+    if (!overview) throw new Error("Expected the client-review overview section");
+    fireEvent.click(await screen.findByRole("button", { name: action === "request" ? "Request client review" : "Approve" }));
+    await waitFor(() => expect(within(overview).getByText(action === "request" ? "Awaiting client review" : "Approved")).toBeInTheDocument());
+    expect(mocks.rpc).toHaveBeenCalledOnce();
+    client.clear();
+  });
+
+  it("refreshes a rejected stale review without losing feedback or resubmitting automatically", async () => {
+    let rows = [approval];
+    mockApprovalRows(() => rows);
+    const latestTask = { ...task, content_revision: 3 };
+    const loadProject = vi.fn().mockResolvedValue({ task: latestTask });
+    mocks.rpc.mockImplementation(async () => {
+      rows = [{ ...approval, id: "latest-approval", revision: 3, snapshot: { ...approval.snapshot, task: { ...approval.snapshot.task, description: "Latest submitted layout" } } }, approval];
+      return { data: null, error: { message: "The task changed; review its current revision" } };
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(["project", "project"], { task });
+    function CurrentTaskPanel() {
+      const currentProject = useQuery<{ task: Task }>({ queryKey: ["project", "project"], queryFn: loadProject, staleTime: Infinity });
+      return <TaskApprovalPanel task={currentProject.data?.task ?? task} projectId="project" currentUserId="client" canEdit={false} canApprove people={[]} />;
+    }
+    render(<QueryClientProvider client={client}><CurrentTaskPanel /></QueryClientProvider>);
+    fireEvent.change(await screen.findByLabelText("Review feedback"), { target: { value: "Keep this feedback draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Request changes" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("review its current revision");
+    expect(await screen.findByText("Latest submitted layout")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Request changes" })).toBeEnabled());
+    expect(screen.getByLabelText("Review feedback")).toHaveValue("Keep this feedback draft");
+    expect(loadProject).toHaveBeenCalledOnce();
+    expect(mocks.rpc).toHaveBeenCalledOnce();
+    expect(mocks.rpc).toHaveBeenCalledWith("respond_task_approval", { p_approval_id: "approval", p_decision: "changes_requested", p_feedback: "Keep this feedback draft" });
+    client.clear();
   });
 });

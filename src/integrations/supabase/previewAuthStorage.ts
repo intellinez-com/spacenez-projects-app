@@ -24,6 +24,47 @@ interface BrokerReply {
 
 const RESULT = 'lovable-preview-auth:result';
 
+/** Each Supabase client keeps a fallback when browser storage is blocked. */
+function safeLocalStorage() {
+  const memory = new Map<string, string | null>();
+  const pending = new Set<string>();
+  const persist = (key: string, value: string | null) => {
+    try {
+      const storage = window.localStorage;
+      if (value === null) storage.removeItem(key);
+      else storage.setItem(key, value);
+      pending.delete(key);
+    } catch {
+      pending.add(key);
+    }
+  };
+  return {
+    getItem: (key: string): string | null => {
+      if (pending.has(key)) {
+        // A failed logout/removal must win over an older stored session.
+        const value = memory.get(key) ?? null;
+        persist(key, value);
+        return value;
+      }
+      try {
+        const value = window.localStorage.getItem(key);
+        memory.set(key, value);
+        return value;
+      } catch {
+        return memory.get(key) ?? null;
+      }
+    },
+    setItem: (key: string, value: string) => {
+      memory.set(key, value);
+      persist(key, value);
+    },
+    removeItem: (key: string) => {
+      memory.set(key, null);
+      persist(key, null);
+    },
+  };
+}
+
 function readBrokerReply(data: unknown, requestId: string): BrokerReply | null {
   if (typeof data !== 'object' || data === null) return null;
   if (!('type' in data) || data.type !== RESULT) return null;
@@ -40,6 +81,7 @@ function readBrokerReply(data: unknown, requestId: string): BrokerReply | null {
  */
 export function brokeredPreviewStorage(): PreviewAuthStorage | undefined {
   if (typeof window === 'undefined') return undefined;
+  const localStorage = safeLocalStorage();
   const host = location.hostname;
   const PREVIEW_ZONES = ['lovableproject.com', 'lovableproject-dev.com', 'lovable.app', 'gpt-eng.com', 'gptengineer.run'];
   const onPreviewZone = PREVIEW_ZONES.some((z) => host === z || host.endsWith('.' + z));
@@ -97,8 +139,7 @@ export function brokeredPreviewStorage(): PreviewAuthStorage | undefined {
   // The editor may not be listening yet at the first getItem, so retry once.
   let firstGet = true;
   const RETRY_DELAY = 250;
-  // Blocked third-party storage throws here; seeding must not break broker reads.
-  const readLocal = (key: string): string | null | undefined => { try { return localStorage.getItem(key); } catch { return undefined; } };
+  const readLocal = (key: string) => localStorage.getItem(key);
 
   return {
     getItem: async (key) => {
@@ -114,12 +155,12 @@ export function brokeredPreviewStorage(): PreviewAuthStorage | undefined {
       // the broker later goes silent. A null value means never-synced -> keep local.
       if (res?.ok && res.value !== null) {
         if (res.value === '') {
-          if (local !== undefined && readLocal(key) === local) localStorage.removeItem(key);
+          if (readLocal(key) === local) localStorage.removeItem(key);
           return null;
         }
         // Seed this origin so a new tab, whose editor holds no session, stays signed in.
         if (local === null && readLocal(key) === null) {
-          try { localStorage.setItem(key, res.value); } catch { /* storage full: still return the editor's session */ }
+          localStorage.setItem(key, res.value);
         }
         return res.value;
       }

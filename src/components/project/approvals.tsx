@@ -176,11 +176,21 @@ export function TaskApprovalPanel({ task, projectId, currentUserId, canEdit, can
   useEffect(() => {
     setFeedback("");
     setActionError(null);
-  }, [task.id, task.content_revision, awaiting?.id]);
+  }, [task.id]);
   const person = (id: string) => {
     const profile = people.find((entry) => entry.id === id);
     return profile?.full_name || profile?.email || "Project member";
   };
+
+  async function refreshReviewState() {
+    // The overview and individual task panels share this project-wide prefix.
+    // Refetch errors remain visible in their query views, without hiding the
+    // original action error or discarding a failed submission's feedback draft.
+    await Promise.allSettled([
+      qc.invalidateQueries({ queryKey: ["task-approvals", projectId] }),
+      qc.invalidateQueries({ queryKey: ["project", projectId] }),
+    ]);
+  }
 
   async function act(action: "request" | "approved" | "changes_requested") {
     if (locked) return;
@@ -202,12 +212,12 @@ export function TaskApprovalPanel({ task, projectId, currentUserId, canEdit, can
         if (error) throw error;
       }
       setFeedback("");
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: ["task-approvals", projectId, task.id] }),
-        qc.invalidateQueries({ queryKey: ["project", projectId] }),
-      ]);
+      await refreshReviewState();
     } catch (error) {
       setActionError(errorMessage(error));
+      // A rejection may mean the content revision or project access changed.
+      // Refresh authoritative state; leave resubmission to the user.
+      await refreshReviewState();
     } finally {
       setBusy(null);
     }

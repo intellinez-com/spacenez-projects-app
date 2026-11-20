@@ -86,6 +86,29 @@ Responsive client layouts — 2026-11-20
     including keyboard opening, photo/file viewing and tablet rotation. The local
     checks use Chromium viewport/touch emulation, not physical-device certification.
 
+Client navigation and recovery — 2026-11-20
+[x] Reproduced the homepage remaining visible after /auth appeared in the address
+    bar by delaying the login route's JavaScript download. The small login screen
+    is now eager; other new pages have loading feedback without an artificial wait.
+[x] Both homepage links reached the login form without additional JavaScript
+    requests after clicking, in 221–458ms in isolated production-build checks.
+[x] Sign-in/reset forms show pending and persistent error states, prevent duplicate
+    submissions and remain retryable after thrown storage/connection failures.
+[x] Invalid reset access leads to the reset-request form; password changes require
+    confirmation and show persistent success. Existing signed-in accounts can also
+    change their initial password. No real passwords were changed during these checks.
+[x] Temporary auth failures show a retry path rather than being treated as sign-out.
+    Browser checks also cover signing out across tabs and blocked browser storage.
+[x] Approval decisions refresh the overview. Stale actions refresh authoritative
+    task/review state without automatically resubmitting or losing the feedback draft.
+[x] Project Refresh fetches updates from another session. Duplicate query-library
+    retries are disabled because the database SDK already retries safe reads.
+[x] A failed refresh preserves an unsent client comment and recovers on retry.
+    Slow project navigation shows progress; background session validation keeps
+    the current project visible. These were checked against the production build.
+[ ] Confirm production password-reset email delivery through the configured SMTP
+    provider. Local tests intercept recovery requests and do not send real email.
+
 Production cutover
 [ ] Build/deploy through infra, configure HTTPS/DNS for app.spacenez.com and verify
     browser/server configuration points to the same migrated destination.

@@ -1,9 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { format, parseISO } from "date-fns";
-import { ArrowLeft, CalendarDays, FileText, Upload, Trash2, MapPin } from "lucide-react";
+import { ArrowLeft, CalendarDays, FileText, Upload, Trash2, MapPin, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe } from "@/lib/auth";
 import { STAGES, stageIndex, progressOf, stageLabel } from "@/lib/constants";
@@ -30,13 +30,15 @@ function ProjectPage() {
   const { id } = Route.useParams();
   const { data: me } = useMe();
   const { data, isLoading, error, refetch } = useProject(id);
+  const qc = useQueryClient();
   const m = useTaskMutations(id);
   const [openId, setOpenId] = useState<string | null>(null);
   const [stageBusy, setStageBusy] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
+  const [refreshing, setRefreshing] = useState(false);
 
   if (isLoading) return <p className="p-8 text-muted-foreground">Loading…</p>;
-  if (error) return <div className="space-y-3 p-8"><p role="alert" className="text-destructive">Project data could not be loaded. {error.message}</p><Button onClick={() => void refetch()}>Retry</Button></div>;
+  if (error && !data?.project) return <div className="space-y-3 p-8"><p role="alert" className="text-destructive">Project data could not be loaded. {error.message}</p><Button onClick={() => void refetch()}>Retry</Button></div>;
   if (!data?.project) return <p className="p-8 text-muted-foreground">Project not found or you don't have access.</p>;
 
   const { project, tasks, members, documents } = data;
@@ -47,6 +49,20 @@ function ProjectPage() {
   const people = members.map((x) => x.profile).filter(Boolean) as Profile[];
   const openTask = tasks.find((t) => t.id === openId) ?? null;
   const pct = progressOf(tasks);
+
+  async function refreshProject() {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["project", id] }, { throwOnError: true }),
+        qc.invalidateQueries({ queryKey: ["task-approvals", id] }, { throwOnError: true }),
+        qc.invalidateQueries({ queryKey: ["project-updates", id] }, { throwOnError: true }),
+        qc.invalidateQueries({ queryKey: ["comments", id] }, { throwOnError: true }),
+      ]);
+    } catch { toast.error("Some project information could not be refreshed. Check your connection and try again."); }
+    finally { setRefreshing(false); }
+  }
 
   async function setStage(v: string) {
     if (!canEdit || stageBusy) return;
@@ -62,9 +78,11 @@ function ProjectPage() {
 
   return (
     <div className="mx-auto min-w-0 max-w-7xl px-4 py-5 sm:px-6 sm:py-8">
-      <Link to="/dashboard" className="inline-flex min-h-11 items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="h-4 w-4" /> All projects
-      </Link>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Link to="/dashboard" className="inline-flex min-h-11 items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="h-4 w-4" /> All projects</Link>
+        <Button variant="outline" size="sm" aria-label="Refresh project" disabled={refreshing} onClick={() => void refreshProject()}><RefreshCw className="h-4 w-4" />{refreshing ? "Refreshing…" : "Refresh"}</Button>
+      </div>
+      {error && <p role="alert" className="mt-3 text-sm text-destructive">The latest project information could not be loaded. Showing the last loaded details; use Refresh to try again.</p>}
       <div className="mt-4 flex flex-wrap items-end justify-between gap-6">
         <div className="min-w-0 max-w-full">
           <p className="eyebrow [overflow-wrap:anywhere]">{project.project_type}{project.client_brand || project.client_name ? ` · ${project.client_brand || project.client_name}` : ""}</p>
