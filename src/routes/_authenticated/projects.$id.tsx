@@ -19,6 +19,7 @@ import { ApprovalOverview } from "@/components/project/approvals";
 import { ProjectDetails } from "@/components/project/ProjectDetails";
 import { ProjectOverview } from "@/components/project/ProjectOverview";
 import { ProjectUpdates } from "@/components/project/ProjectUpdates";
+import { DailyStatus } from "@/components/project/DailyStatus";
 import { useProject, useTaskMutations, uploadDoc, openDoc, fmtSize, type Task, type Profile, type Doc } from "@/components/project/data";
 
 export const Route = createFileRoute("/_authenticated/projects/$id")({
@@ -34,7 +35,7 @@ function ProjectPage() {
   const m = useTaskMutations(id);
   const [openId, setOpenId] = useState<string | null>(null);
   const [stageBusy, setStageBusy] = useState(false);
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState("daily");
   const [refreshing, setRefreshing] = useState(false);
 
   if (isLoading) return <p className="p-8 text-muted-foreground">Loading…</p>;
@@ -49,6 +50,17 @@ function ProjectPage() {
   const people = members.map((x) => x.profile).filter(Boolean) as Profile[];
   const openTask = tasks.find((t) => t.id === openId) ?? null;
   const pct = progressOf(tasks);
+  const sections = [
+    { value: "daily", label: "Daily status" },
+    { value: "overview", label: "Overview" },
+    { value: "table", label: "Work & dates" },
+    ...(canEdit ? [{ value: "board", label: "Board" }, { value: "timeline", label: "Timeline" }] : []),
+    { value: "updates", label: "Discussion" },
+    { value: "files", label: `Photos & files (${documents.length})` },
+    { value: "approvals", label: "Approvals" },
+    { value: "details", label: "Details" },
+    ...(me?.isAdmin ? [{ value: "team", label: "Team" }] : []),
+  ];
 
   async function refreshProject() {
     if (refreshing) return;
@@ -59,6 +71,7 @@ function ProjectPage() {
         qc.invalidateQueries({ queryKey: ["task-approvals", id] }, { throwOnError: true }),
         qc.invalidateQueries({ queryKey: ["project-updates", id] }, { throwOnError: true }),
         qc.invalidateQueries({ queryKey: ["comments", id] }, { throwOnError: true }),
+        qc.invalidateQueries({ queryKey: ["daily-updates"] }, { throwOnError: true }),
       ]);
     } catch { toast.error("Some project information could not be refreshed. Check your connection and try again."); }
     finally { setRefreshing(false); }
@@ -90,38 +103,36 @@ function ProjectPage() {
           <p className="mt-2 flex flex-wrap gap-4 text-sm text-muted-foreground">
             {project.location && <span className="flex min-w-0 items-start gap-1 [overflow-wrap:anywhere]"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />{project.location}</span>}
             {project.target_date && <span>Handover {format(parseISO(project.target_date), "d MMM yyyy")}</span>}
-            <span>{canEdit ? "You can edit" : canApprove ? "View, comment & approve" : "View & comment"}</span>
+            {canEdit && <span>You can edit</span>}
+            {!canEdit && <span>{stageLabel(project.current_stage)} · {pct}% of tasks complete</span>}
           </p>
         </div>
-        <div className="w-full max-w-sm space-y-2">
+        {canEdit ? <div className="w-full max-w-sm space-y-2">
           <div className="flex min-w-0 items-center justify-between gap-3 text-sm">
-            {canEdit ? (
-              <Select disabled={stageBusy} value={project.current_stage} onValueChange={(value) => void setStage(value)}>
-                <SelectTrigger className="min-w-0 flex-1"><SelectValue /></SelectTrigger>
-                <SelectContent>{STAGES.map((s) => <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>)}</SelectContent>
-              </Select>
-            ) : (
-              <span className="min-w-0 break-words">{stageLabel(project.current_stage)}</span>
-            )}
+            <Select disabled={stageBusy} value={project.current_stage} onValueChange={(value) => void setStage(value)}>
+              <SelectTrigger className="min-w-0 flex-1"><SelectValue /></SelectTrigger>
+              <SelectContent>{STAGES.map((s) => <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>)}</SelectContent>
+            </Select>
             <span className="shrink-0 font-display text-2xl">{pct}%</span>
           </div>
           <StageTrack current={stageIndex(project.current_stage)} />
           {meetingUrl && <Button asChild variant="outline" size="sm"><a href={meetingUrl} target="_blank" rel="noopener noreferrer"><CalendarDays className="h-4 w-4" /> Schedule a meeting</a></Button>}
-        </div>
+        </div> : meetingUrl && <Button asChild variant="outline" size="sm"><a href={meetingUrl} target="_blank" rel="noopener noreferrer"><CalendarDays className="h-4 w-4" /> Schedule a meeting</a></Button>}
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-8">
-        <TabsList aria-label="Project sections" className="grid h-auto w-full grid-cols-2 gap-1 min-[420px]:grid-cols-3 sm:flex sm:flex-wrap sm:justify-start [&>button]:whitespace-normal">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="table">Work & dates</TabsTrigger>
-          {canEdit && <TabsTrigger value="board">Board</TabsTrigger>}
-          {canEdit && <TabsTrigger value="timeline">Timeline</TabsTrigger>}
-          <TabsTrigger value="updates">Updates</TabsTrigger>
-          <TabsTrigger value="files">Photos & files ({documents.length})</TabsTrigger>
-          <TabsTrigger value="approvals">Approvals</TabsTrigger>
-          <TabsTrigger value="details">Details</TabsTrigger>
-          {me?.isAdmin && <TabsTrigger value="team">Team</TabsTrigger>}
+        <div className="sm:hidden">
+          <label htmlFor={`project-section-${id}`} className="sr-only">Project section</label>
+          <select id={`project-section-${id}`} className="h-11 w-full min-w-0 rounded-md border bg-background px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={activeTab} onChange={(event) => setActiveTab(event.target.value)}>
+            {sections.map((section) => <option key={section.value} value={section.value}>{section.label}</option>)}
+          </select>
+        </div>
+        <TabsList aria-label="Project sections" className="hidden h-auto w-full gap-1 sm:flex sm:flex-wrap sm:justify-start [&>button]:min-h-11 [&>button]:whitespace-normal">
+          {sections.map((section) => <TabsTrigger key={section.value} value={section.value}>{section.label}</TabsTrigger>)}
         </TabsList>
+        <TabsContent value="daily" className="mt-6">
+          <DailyStatus key={id} projectId={id} tasks={tasks} documents={documents} canEdit={canEdit} onOpenTask={(task) => setOpenId(task.id)} onOpenFiles={() => setActiveTab("files")} />
+        </TabsContent>
         <TabsContent value="overview" className="mt-6">
           <ProjectOverview project={project} tasks={tasks} documents={documents} onOpenTask={(task) => setOpenId(task.id)} onOpenFiles={() => setActiveTab("files")} onOpenUpdates={() => setActiveTab("updates")} />
         </TabsContent>

@@ -9,8 +9,11 @@ export const previewIds = {
 };
 
 function day(offset: number) {
-  const date = new Date(); date.setDate(date.getDate() + offset);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((value) => value.type === type)!.value;
+  const today = `${part("year")}-${part("month")}-${part("day")}`;
+  const date = new Date(`${today}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + offset);
+  return date.toISOString().slice(0, 10);
 }
 function timestamp(offset: number, hour = 9) { return `${day(offset)}T${String(hour).padStart(2, "0")}:00:00.000Z`; }
 
@@ -55,6 +58,11 @@ export function createPreviewFixtures() {
     { id: "77777777-7777-4777-8777-777777777772", project_id: previewIds.project, task_id: previewIds.reviewTask, user_id: previewIds.designer, body: "Please check the walkway and sofa positions in the attached sample notes.", created_at: timestamp(-1, 9) },
     { id: "77777777-7777-4777-8777-777777777773", project_id: previewIds.project, task_id: null, user_id: previewIds.client, body: "Thank you. I will review the layout and share my feedback here.", created_at: timestamp(-1, 11) },
   ];
+  const project_daily_updates: Row<"project_daily_updates">[] = [
+    { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1", project_id: previewIds.project, report_date: day(0), work_done: "Reviewed the furniture layout and confirmed the kitchen measurements. The revised drawing is ready for review.", next_steps: "Confirm the sofa position, then prepare the living room visuals.", blockers: "Lighting preferences are awaiting your confirmation.", created_by: previewIds.designer, created_at: new Date().toISOString() },
+    { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2", project_id: previewIds.project, report_date: day(-1), work_done: "Completed the site measurements and shared the room photos.", next_steps: "Revise the furniture layout using the measurements.", blockers: "", created_by: previewIds.designer, created_at: timestamp(-1, 10) },
+    { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3", project_id: previewIds.project, report_date: day(-9), work_done: "Agreed the project brief and recorded the room requirements.", next_steps: "Schedule the site survey.", blockers: "", created_by: previewIds.designer, created_at: timestamp(-9, 10) },
+  ];
   const reviewTask = tasks.find((task) => task.id === previewIds.reviewTask)!;
   const task_approvals: Row<"task_approvals">[] = [{
     id: "88888888-8888-4888-8888-888888888881", project_id: previewIds.project, task_id: previewIds.reviewTask, revision: 1,
@@ -65,5 +73,5 @@ export function createPreviewFixtures() {
     id: "99999999-9999-4999-8999-999999999991", project_id: previewIds.project, task_id: previewIds.reviewTask,
     source_id: "sample-layout-review", stage_gate: "2D Layout", milestone: "Furniture layout", description: "Confirm the furniture positions before visuals begin.", source_metadata: {}, created_at: timestamp(-14),
   }];
-  return { profiles, projects, tasks, project_members, documents, comments, task_approvals, task_approval_plan, user_roles: [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", user_id: previewIds.client, role: "client" }] };
+  return { profiles, projects, tasks, project_members, documents, comments, project_daily_updates, task_approvals, task_approval_plan, user_roles: [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", user_id: previewIds.client, role: "client" }] };
 }

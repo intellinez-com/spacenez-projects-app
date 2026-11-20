@@ -25,6 +25,20 @@ describe("isolated client preview transport", () => {
     expect(loaded.data?.[0]?.author?.full_name).toBe("Sample Client");
   });
 
+  it("loads dated team reports separately from comments and keeps reports read-only for clients", async () => {
+    const all = await supabase.from("project_daily_updates").select("*,author:profiles(full_name,email)").eq("project_id", previewIds.project).order("report_date", { ascending: false }).range(0, 49);
+    expect(all.error).toBeNull();
+    expect(all.data).toHaveLength(3);
+    const today = all.data![0]!.report_date;
+    const dated = await supabase.from("project_daily_updates").select("*,author:profiles(full_name,email)").eq("project_id", previewIds.project).gte("report_date", today).lte("report_date", today);
+    expect(dated.error).toBeNull();
+    expect(dated.data).toHaveLength(1);
+    expect(dated.data?.[0]?.author?.full_name).toBe("Sample Designer");
+    const forbidden = await supabase.from("project_daily_updates").insert({ project_id: previewIds.project, work_done: "A client cannot publish a team report" });
+    expect(forbidden.error).toBeTruthy();
+    expect(realFetch).not.toHaveBeenCalled();
+  });
+
   it("requires change feedback and records a decision without a real backend", async () => {
     const pending = await supabase.from("task_approvals").select("*").eq("task_id", previewIds.reviewTask).single();
     expect(pending.error).toBeNull();

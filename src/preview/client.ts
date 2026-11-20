@@ -29,6 +29,7 @@ function rowsFor(table: string): PreviewRow[] | null {
   const rows = fixture[table as keyof typeof fixture] as unknown as PreviewRow[];
   if (table === "project_members") return rows.map((row) => ({ ...row, profile: fixture.profiles.find((profile) => profile.id === row["user_id"]) ?? null }));
   if (table === "comments") return rows.map((row) => ({ ...row, author: fixture.profiles.find((profile) => profile.id === row["user_id"]) ?? null, task: fixture.tasks.find((task) => task.id === row["task_id"]) ?? null }));
+  if (table === "project_daily_updates") return rows.map((row) => ({ ...row, author: fixture.profiles.find((profile) => profile.id === row["created_by"]) ?? null }));
   return rows;
 }
 
@@ -85,6 +86,9 @@ export const previewFetch: typeof fetch = async (input, init) => {
   for (const [key, filter] of url.searchParams) {
     if (["select", "order", "offset", "limit"].includes(key)) continue;
     if (filter.startsWith("eq.")) rows = rows.filter((row) => String(row[key]) === filter.slice(3));
+    else if (filter.startsWith("gte.")) rows = rows.filter((row) => String(row[key]) >= filter.slice(4));
+    else if (filter.startsWith("lte.")) rows = rows.filter((row) => String(row[key]) <= filter.slice(4));
+    else if (filter.startsWith("lt.")) rows = rows.filter((row) => String(row[key]) < filter.slice(3));
     else if (filter === "is.null") rows = rows.filter((row) => row[key] === null);
     else return denied("Unsupported local preview filter.");
   }

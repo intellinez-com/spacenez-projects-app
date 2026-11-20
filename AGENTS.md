@@ -10,6 +10,7 @@
 <!-- LOVABLE:END -->
 
 ## Architecture rules
+- Daily work is recorded in `project_daily_updates`, separate from client discussion. Reports use an explicit India-calendar work date, server-stamped author/time and append-only editor writes. Never infer historical work completion from a task's current status or `updated_at`.
 - Access control lives in database policies (has_role / can_view_project / can_edit_project); UI checks only hide controls. Why: clients and partners must never read projects they aren't members of.
 - Global roles (admin/partner/client) live in user_roles; per-project access lives in project_members.access ('partner' edits, 'client' views+comments). Why: same person can have different access per project.
 - Accounts are invite-only: public sign-up is disabled and admins create users via the createPortalUser server function; the first account ever created becomes admin via trigger.

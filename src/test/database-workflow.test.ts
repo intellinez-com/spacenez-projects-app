@@ -107,6 +107,63 @@ async function attach() {
   await asActor(partner, "insert into public.documents(id,project_id,task_id,name,path,uploaded_by) values ($1,$2,$3,'proposal.pdf',$4,$5)", [documentId, project, task, documentPath, partner]);
 }
 
+describe("published daily project updates", () => {
+  const publish = (actor: string, projectId = project, workDone = "Site measurements completed") =>
+    asActor(actor, "insert into public.project_daily_updates(project_id,work_done) values ($1,$2) returning *", [projectId, workDone]);
+
+  it("lets project editors publish and project clients read, while denying client and outsider publication", async () => {
+    const report = firstRow(await publish(partner));
+    expect(report).toMatchObject({ project_id: project, work_done: "Site measurements completed", created_by: partner, next_steps: "", blockers: "" });
+    expect((await asActor(client, "select id from public.project_daily_updates where project_id=$1", [project])).rows).toEqual([{ id: report["id"] }]);
+    expect((await asActor(outsider, "select id from public.project_daily_updates")).rows).toEqual([]);
+    await expect(publish(client)).rejects.toThrow();
+    await expect(publish(outsider)).rejects.toThrow();
+    await expect(publish(partner, otherProject)).rejects.toThrow();
+    await expect(asActor(null, "select id from public.project_daily_updates")).rejects.toThrow();
+    await expect(asActor(null, "insert into public.project_daily_updates(project_id,work_done) values ($1,'Unauthenticated')", [project])).rejects.toThrow();
+  });
+
+  it("stamps the authenticated author and posting time and permits several reports for one work day", async () => {
+    const result = await asActor(partner, `insert into public.project_daily_updates(project_id,work_done,created_by,created_at)
+      values ($1,'  Furniture layout reviewed  ',$2,'2000-01-01')
+      returning created_by, work_done, created_at > '2020-01-01'::timestamptz as server_time,
+      report_date = (clock_timestamp() at time zone 'Asia/Kolkata')::date as india_today`, [project, outsider]);
+    expect(result.rows[0]).toMatchObject({ created_by: partner, work_done: "Furniture layout reviewed", server_time: true, india_today: true });
+    await publish(partner, project, "Kitchen dimensions confirmed");
+    expect((await asActor(client, "select id from public.project_daily_updates where project_id=$1", [project])).rows).toHaveLength(2);
+  });
+
+  it("rejects blank, oversized and future-dated reports, while allowing explicit earlier work dates", async () => {
+    await expect(publish(partner, project, " \n\t ")).rejects.toThrow();
+    await expect(publish(partner, project, "x".repeat(10_001))).rejects.toThrow();
+    await expect(asActor(partner, "insert into public.project_daily_updates(project_id,work_done,next_steps) values ($1,'Done',$2)", [project, "x".repeat(10_001)])).rejects.toThrow();
+    await expect(asActor(partner, "insert into public.project_daily_updates(project_id,work_done,blockers) values ($1,'Done',$2)", [project, "x".repeat(10_001)])).rejects.toThrow();
+    await expect(asActor(partner, `insert into public.project_daily_updates(project_id,work_done,report_date)
+      values ($1,'Future report',(clock_timestamp() at time zone 'Asia/Kolkata')::date + 1)`, [project])).rejects.toThrow("cannot be dated in the future");
+    await expect(asActor(partner, "insert into public.project_daily_updates(project_id,work_done,report_date) values ($1,'Invalid date','-infinity')", [project])).rejects.toThrow();
+    expect((await asActor(partner, "insert into public.project_daily_updates(project_id,work_done,report_date) values ($1,'Earlier site work','2020-01-01') returning report_date::text", [project])).rows).toEqual([{ report_date: "2020-01-01" }]);
+  });
+
+  it("does not let authenticated users rewrite or remove a published report", async () => {
+    const report = firstRow(await publish(partner));
+    for (const actor of [partner, admin, client]) {
+      await expect(asActor(actor, "update public.project_daily_updates set work_done='Rewritten' where id=$1", [report["id"]])).rejects.toThrow();
+      await expect(asActor(actor, "delete from public.project_daily_updates where id=$1", [report["id"]])).rejects.toThrow();
+    }
+    expect((await asActor(client, "select work_done from public.project_daily_updates where id=$1", [report["id"]])).rows).toEqual([{ work_done: "Site measurements completed" }]);
+  });
+
+  it("shows the identity of a visible project's global-admin reporter without exposing other report authors", async () => {
+    await db.query("delete from public.project_members where user_id=$1", [admin]);
+    expect((await asActor(client, "select id from public.profiles where id=$1", [admin])).rows).toEqual([]);
+    await publish(admin);
+    expect((await asActor(client, "select id from public.profiles where id=$1", [admin])).rows).toEqual([{ id: admin }]);
+    expect((await asActor(outsider, "select id from public.profiles where id=$1", [admin])).rows).toEqual([]);
+    await publish(admin, otherProject);
+    expect((await asActor(outsider, "select id from public.project_daily_updates")).rows).toHaveLength(1);
+  });
+});
+
 describe("task approval authorization and immutable evidence", () => {
   it("allows editors to request and project clients to decide, using the database actor", async () => {
     const approval = await request();

@@ -132,6 +132,54 @@ export type Database = {
           },
         ]
       }
+      project_daily_updates: {
+        Row: {
+          blockers: string
+          created_at: string
+          created_by: string
+          id: string
+          next_steps: string
+          project_id: string
+          report_date: string
+          work_done: string
+        }
+        Insert: {
+          blockers?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          next_steps?: string
+          project_id: string
+          report_date?: string
+          work_done: string
+        }
+        Update: {
+          blockers?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          next_steps?: string
+          project_id?: string
+          report_date?: string
+          work_done?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_daily_updates_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_daily_updates_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           company: string | null

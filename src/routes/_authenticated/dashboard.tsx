@@ -1,9 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Plus, MapPin, CalendarDays, AlertTriangle } from "lucide-react";
-import { format, parseISO } from "date-fns";
+import { format, isValid, parseISO } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useMe } from "@/lib/auth";
 import { STAGES, PROJECT_TYPES, stageIndex, stageLabel, progressOf } from "@/lib/constants";
@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ProjectImportDialog } from "@/components/project/ProjectImportDialog";
 import { isTaskOverdue } from "@/lib/task-dates";
+import { loadLatestDailyUpdates, projectDay, type DailyUpdate } from "@/lib/daily-updates";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Projects — Spacenez Track" }] }),
@@ -41,18 +42,32 @@ function Dashboard() {
   const tasks = data?.tasks ?? [];
   const overdue = tasks.filter((task) => isTaskOverdue(task));
   const inExecution = projects.filter((p) => p.current_stage === "execution").length;
+  const projectIds = projects.map((project) => project.id);
+  const [today, setToday] = useState(() => projectDay());
+  useEffect(() => {
+    const updateDay = () => setToday(projectDay());
+    const timer = window.setInterval(updateDay, 60_000);
+    window.addEventListener("focus", updateDay);
+    return () => { window.clearInterval(timer); window.removeEventListener("focus", updateDay); };
+  }, []);
+  const dailyUpdates = useQuery({
+    queryKey: ["daily-updates", "dashboard", projectIds, today],
+    queryFn: () => loadLatestDailyUpdates(projectIds),
+    enabled: !isLoading && !isError && projectIds.length > 0,
+    refetchInterval: 60_000,
+  });
 
   return (
     <div className="mx-auto min-w-0 max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">
-          <p className="eyebrow">{me?.isAdmin ? "Studio overview" : "Your projects"}</p>
-          <h1 className="mt-1 text-3xl sm:text-4xl">Projects</h1>
+          {me?.isAdmin && <p className="eyebrow">Studio overview</p>}
+          <h1 className="mt-1 text-3xl sm:text-4xl">{me?.isAdmin ? "Projects" : "Your project updates"}</h1>
         </div>
         {me?.isAdmin && <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap"><ProjectImportDialog /><NewProjectDialog /></div>}
       </div>
 
-      {!isError && !isLoading && <div className="mt-6 grid grid-cols-2 gap-3 sm:mt-8 sm:gap-4 lg:grid-cols-4">
+      {me?.isAdmin && !isError && !isLoading && <div className="mt-6 grid grid-cols-2 gap-3 sm:mt-8 sm:gap-4 lg:grid-cols-4">
         <Stat label="Active projects" value={projects.filter((p) => p.status === "active").length} />
         <Stat label="In execution" value={inExecution} />
         <Stat label="Open tasks" value={tasks.filter((t) => t.status !== "done").length} />
@@ -76,10 +91,16 @@ function Dashboard() {
         </section>
       )}
 
-      <section className="mt-10">
+      <section className="mt-6 sm:mt-8">
+        {!isError && projects.length > 0 && dailyUpdates.isError && (
+          <div role="alert" className="mb-4 space-y-3 rounded-lg border p-4 text-sm">
+            <p>{dailyUpdates.data ? "Daily status could not be refreshed. Showing the last loaded reports." : "Daily status could not be loaded. You can still open your project."}</p>
+            <Button variant="outline" size="sm" className="min-h-11 whitespace-normal" disabled={dailyUpdates.isFetching} onClick={() => void dailyUpdates.refetch()}>Retry daily status</Button>
+          </div>
+        )}
         {isError ? (
           <div role="alert" className="space-y-3 rounded-lg border p-5">
-            <p>Could not load projects and tasks. The totals are unavailable.</p>
+            <p>{me?.isAdmin ? "Could not load projects and tasks. The totals are unavailable." : "Your projects could not be loaded. Please try again."}</p>
             <Button variant="outline" onClick={() => void refetch()}>Try again</Button>
           </div>
         ) : isLoading ? (
@@ -101,12 +122,13 @@ function Dashboard() {
                   key={p.id}
                   to="/projects/$id"
                   params={{ id: p.id }}
-                  className="group min-w-0 rounded-xl border bg-card p-4 shadow-soft transition-colors sm:p-5"
+                  aria-label={`Open daily status for ${p.name}`}
+                  className="group min-w-0 rounded-lg border bg-card p-4 transition-colors hover:border-oak focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-5"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
                       <p className="eyebrow">{p.project_type}</p>
-                      <h3 className="mt-1 break-words text-xl group-hover:text-oak">{p.name}</h3>
+                      <h2 className="mt-1 break-words text-xl group-hover:text-oak">{p.name}</h2>
                     </div>
                     <span className="shrink-0 font-display text-2xl">{pct}%</span>
                   </div>
@@ -114,6 +136,15 @@ function Dashboard() {
                     {p.client_name && <span className="min-w-0 break-words">{p.client_name}</span>}
                     {p.location && <span className="flex min-w-0 max-w-full items-start gap-1"><MapPin className="mt-0.5 h-3 w-3 shrink-0" /><span className="min-w-0 break-words">{p.location}</span></span>}
                     {p.target_date && <span className="flex items-center gap-1 whitespace-nowrap"><CalendarDays className="h-3 w-3 shrink-0" />{format(parseISO(p.target_date), "d MMM yyyy")}</span>}
+                  </div>
+                  <div className="mt-4 min-w-0 space-y-2 border-y py-4 [overflow-wrap:anywhere]">
+                    <LatestDailyReport
+                      report={dailyUpdates.data?.[p.id]}
+                      today={today}
+                      loading={dailyUpdates.isPending}
+                      unavailable={dailyUpdates.isError && !dailyUpdates.data}
+                    />
+                    <p className="pt-1 text-sm font-medium text-oak">Open daily status →</p>
                   </div>
                   <div className="mt-5">
                     <StageTrack current={stageIndex(p.current_stage)} />
@@ -129,6 +160,24 @@ function Dashboard() {
       </section>
     </div>
   );
+}
+
+function reportDate(value: string) {
+  const date = parseISO(value);
+  return isValid(date) ? format(date, "d MMM yyyy") : "Date unavailable";
+}
+
+function LatestDailyReport({ report, today, loading, unavailable }: { report: DailyUpdate | null | undefined; today: string; loading: boolean; unavailable: boolean }) {
+  if (loading) return <p role="status" className="text-sm text-muted-foreground">Loading daily status…</p>;
+  if (unavailable || report === undefined) return <p className="text-sm text-muted-foreground">Daily status is unavailable.</p>;
+  return <>
+    {report?.report_date === today ? <p className="text-sm font-medium">Today’s update · {reportDate(report.report_date)}</p> : <p className="text-sm font-medium">No daily update posted today.</p>}
+    {report ? <>
+      {report.report_date !== today && <p className="text-xs text-muted-foreground">Latest report: <time dateTime={report.report_date}>{reportDate(report.report_date)}</time></p>}
+      <p className="line-clamp-3 whitespace-pre-wrap text-sm leading-relaxed">{report.work_done}</p>
+      {report.blockers && <p className="line-clamp-2 text-sm"><span className="font-medium">Delays / blockers:</span> {report.blockers}</p>}
+    </> : <p className="text-sm text-muted-foreground">The team has not shared a daily report yet.</p>}
+  </>;
 }
 
 function Stat({ label, value, warn }: { label: string; value: number; warn?: boolean }) {
