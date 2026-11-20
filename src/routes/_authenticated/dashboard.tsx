@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ProjectImportDialog } from "@/components/project/ProjectImportDialog";
 import { isTaskOverdue } from "@/lib/task-dates";
+import { projectTypeLabel } from "@/lib/project-type";
 import { projectDay } from "@/lib/daily-updates";
 import { loadLatestProjectActivity, type ProjectActivity } from "@/lib/project-activity";
 import { activityDescription } from "@/lib/activity-description";
@@ -119,6 +120,7 @@ function Dashboard() {
             {projects.map((p) => {
               const pt = tasks.filter((t) => t.project_id === p.id);
               const pct = progressOf(pt);
+              const typeLabel = projectTypeLabel(p.project_type);
               return (
                 <Link
                   key={p.id}
@@ -129,7 +131,7 @@ function Dashboard() {
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
-                      <p className="eyebrow">{p.project_type}</p>
+                      {typeLabel && <p className="eyebrow">{typeLabel}</p>}
                       <h2 className="mt-1 break-words text-xl group-hover:text-oak">{p.name}</h2>
                     </div>
                     <span className="shrink-0 font-display text-2xl">{pct}%</span>
@@ -264,9 +266,9 @@ function NewProjectDialog() {
             <div className="space-y-1.5"><Label>Location</Label><Input value={form.location} onChange={set("location")} /></div>
           </div>
           <div className="space-y-1.5">
-            <Label>Type</Label>
+            <Label htmlFor="new-project-type">Project type</Label>
             <Select value={form.project_type} onValueChange={(v) => setForm({ ...form, project_type: v })}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger id="new-project-type"><SelectValue /></SelectTrigger>
               <SelectContent>{PROJECT_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
             </Select>
           </div>

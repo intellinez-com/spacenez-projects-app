@@ -10,6 +10,7 @@ import { STAGES, stageIndex, progressOf, stageLabel } from "@/lib/constants";
 import { StageTrack } from "@/components/StatusPill";
 import { safeMeetingUrl } from "@/lib/meeting-url";
 import { errorMessage } from "@/lib/errors";
+import { projectTypeLabel } from "@/lib/project-type";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -50,6 +51,7 @@ function ProjectPage() {
   const people = members.map((x) => x.profile).filter(Boolean) as Profile[];
   const openTask = tasks.find((t) => t.id === openId) ?? null;
   const pct = progressOf(tasks);
+  const projectContext = [projectTypeLabel(project.project_type), project.client_brand?.trim() || project.client_name?.trim()].filter(Boolean).join(" · ");
   const sections = [
     { value: "daily", label: "Daily status" },
     { value: "overview", label: "Overview" },
@@ -99,7 +101,7 @@ function ProjectPage() {
       {error && <p role="alert" className="mt-3 text-sm text-destructive">The latest project information could not be loaded. Showing the last loaded details; use Refresh to try again.</p>}
       <div className="mt-4 flex flex-wrap items-end justify-between gap-6">
         <div className="min-w-0 max-w-full">
-          <p className="eyebrow [overflow-wrap:anywhere]">{project.project_type}{project.client_brand || project.client_name ? ` · ${project.client_brand || project.client_name}` : ""}</p>
+          {projectContext && <p className="eyebrow [overflow-wrap:anywhere]">{projectContext}</p>}
           <h1 className="mt-1 text-3xl [overflow-wrap:anywhere] sm:text-4xl">{project.name}</h1>
           <p className="mt-2 flex flex-wrap gap-4 text-sm text-muted-foreground">
             {project.location && <span className="flex min-w-0 items-start gap-1 [overflow-wrap:anywhere]"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />{project.location}</span>}

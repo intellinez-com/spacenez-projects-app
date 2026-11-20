@@ -26,7 +26,7 @@ export const PRIORITIES = [
   { key: "high", label: "High" },
 ] as const;
 
-export const PROJECT_TYPES = ["Apartment", "Villa", "Office", "Retail", "Hospitality", "Other"];
+export const PROJECT_TYPES = ["Apartment", "Villa", "Office", "Retail", "Restaurant / Café", "Hospitality", "Other"];
 
 export const stageLabel = (k: string) => STAGES.find((s) => s.key === k)?.label ?? k;
 export const statusLabel = (k: string) => STATUSES.find((s) => s.key === k)?.label ?? k;
