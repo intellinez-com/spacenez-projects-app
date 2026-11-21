@@ -625,6 +625,26 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_project_finance: {
+        Args: { p_project_id: string }
+        Returns: Json
+      }
+      save_project_finance: {
+        Args: { p_project_id: string; p_expected_version: number; p_plan: Json; p_milestones: Json }
+        Returns: Json
+      }
+      record_project_payment: {
+        Args: { p_project_id: string; p_payment: Json; p_allocations?: Json }
+        Returns: Json
+      }
+      review_project_payment: {
+        Args: { p_payment_id: string; p_decision: string; p_reason: string; p_allocations?: Json }
+        Returns: Json
+      }
+      allocate_project_payment: {
+        Args: { p_payment_id: string; p_allocations: Json }
+        Returns: Json
+      }
       approval_retains_file: {
         Args: { p_document_id: string | null; p_path: string | null }
         Returns: boolean

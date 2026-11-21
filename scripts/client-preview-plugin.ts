@@ -43,7 +43,10 @@ export function clientPreviewPlugin(): Plugin {
       if (env.command !== "serve") throw new Error("Client preview is local-only. Use the normal production build for deployment.");
       enabled = true;
       return {
-        resolve: { alias: [{ find: /^@\/integrations\/supabase\/client$/, replacement: fileURLToPath(new URL("../src/preview/client.ts", import.meta.url)) }] },
+        resolve: { alias: [
+          { find: /^@\/integrations\/supabase\/client$/, replacement: fileURLToPath(new URL("../src/preview/client.ts", import.meta.url)) },
+          { find: /^@\/lib\/project-finance$/, replacement: fileURLToPath(new URL("../src/preview/project-finance.ts", import.meta.url)) },
+        ] },
         server: { host: "127.0.0.1", port: 4173, strictPort: true },
       };
     },

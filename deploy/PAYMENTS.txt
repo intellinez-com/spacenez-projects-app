@@ -1,0 +1,73 @@
+Project payment tracking — 2026-11-21
+
+Setup and use
+- Open a project > Payments. An admin enters the agreed INR project total, scope,
+  payment instructions and milestone schedule, then explicitly saves and shares it.
+  Existing projects start unconfigured. No RCF amounts or payment history are seeded.
+- Enter the final agreed total, including any applicable charges, as one amount.
+  This module does not calculate tax or issue statutory tax invoices.
+- Milestone due dates and explicit due markers determine what is due now. A written
+  due condition explains the agreement; task changes and design approvals do not
+  automatically demand payment. The remaining contract balance can include later work.
+- Record an already-received advance/payment with its actual date and method.
+  Allocate it to milestones or retain it as unallocated credit against the total.
+  Partial payments are supported; an advance is part of the project price.
+- A client can report a payment and attach a private proof. Reports remain pending
+  and do not reduce outstanding until an admin checks and confirms receipt.
+- Admins confirm/reject reports, correct records through a reasoned void, and record
+  money already refunded against its original receipt. Recording a refund does not
+  transfer money. The original receipt and the correction history are retained.
+- This release tracks collections. It does not create online checkout sessions,
+  charge cards/UPI, initiate refunds or start recurring subscriptions.
+
+Access and evidence
+- Database RPCs enforce admin-only setup, confirmation, allocation and corrections.
+  Ordinary project editing permission does not confer finance editing permission.
+- Assigned clients can read their project finances and submit pending receipts only.
+  Partners have no finance access by default. Admins can explicitly share a redacted
+  summary and milestones; references, payment records, proof files and audit remain
+  unavailable to partners. Unassigned accounts and anonymous requests are denied.
+- Financial changes have a separate immutable audit, not general project_activity.
+  Daily status continues to describe project work without exposing financial details.
+- Private payment proofs use project-finance/<project_id>/<uploader_id>/<random-file>.
+  PDF, PNG, JPEG and WebP are allowed up to 5 MiB. Access uses short-lived signed URLs.
+  Proofs already linked to payment history are retained through rejection/voiding.
+- Money uses integer paise; updates and allocations are atomic and project-scoped.
+  Stable payment IDs make request retries duplicate-safe. Quote version checks
+  prevent an outdated admin editor from overwriting a newer agreement.
+
+Deployment
+- Applied to cwhofudilhawuvmhzgdx:
+  20261121084513_project_finance.sql
+  SHA-256: 2cffc86340e034e3139bf40a9a95ffacb4689ea30140951237a573dee4a38181
+  Recorded in portal_migration_private.feature_migrations. Existing business, Auth
+  and file rows were fingerprint-checked; transactional financial fixtures rolled
+  back. RCF remains unconfigured. The application pipeline does not apply migrations.
+  Reconcile CLI migration history before adopting db push; do not replay this or
+  earlier schema files on the populated destination.
+- No new gateway credentials or environment variables are required for this release.
+- A later collection integration needs a merchant account appropriate to interior
+  services, server-priced orders/links and verified, duplicate-safe webhooks. It must
+  confirm captured payments on the server rather than trusting a browser success.
+- The serve-only client preview contains fictional finance data. It cannot contact
+  Supabase or transfer money, and its state resets when the page is reloaded.
+
+Verification
+- PostgreSQL workflow tests exercise actual policies, RPCs and ledger invariants.
+- Seven live transactional checks verified configuration/version conflicts, advances,
+  pending reports, confirmations, refunds/voids, partner redaction and client REST.
+- Nine actual Auth/Storage API checks used temporary confirmed QA accounts and
+  fictional projects. PDF/PNG uploads and signed reads worked; foreign projects,
+  partners and outsiders were denied. Linked proofs survived delete/replace attempts;
+  unused own uploads could be removed. All fixtures were cleaned up and original
+  financial, project, file and account record fingerprints matched.
+- Client browser checks passed at 320, 390, 768, 1024 and 1366px without horizontal
+  page overflow. Reporting a sample payment was single-flight, stayed pending and
+  preserved the confirmed balance. Its private sample proof opened successfully.
+  Physical iPhone Safari and Android device acceptance remains an owner check.
+- Fifteen admin layout checks passed at 320, 768 and 1366px across plan, receipt,
+  refund, allocation and correction forms, including long labels and reachable controls.
+- TypeScript, lint for the new finance files and the production Node SSR build passed.
+  The full suite passed 238 tests; the 45 affected finance tests passed again after
+  final retry hardening. One draft keeps its ID even after editing an ambiguous retry,
+  and a receipt already found in history blocks a second submission.

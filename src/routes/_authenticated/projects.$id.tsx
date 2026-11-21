@@ -21,6 +21,7 @@ import { ProjectDetails } from "@/components/project/ProjectDetails";
 import { ProjectOverview } from "@/components/project/ProjectOverview";
 import { ProjectUpdates } from "@/components/project/ProjectUpdates";
 import { DailyStatus } from "@/components/project/DailyStatus";
+import { ProjectPayments } from "@/components/project/ProjectPayments";
 import { useProject, useTaskMutations, uploadDoc, openDoc, fmtSize, type Task, type Profile, type Doc } from "@/components/project/data";
 
 export const Route = createFileRoute("/_authenticated/projects/$id")({
@@ -60,6 +61,7 @@ function ProjectPage() {
     { value: "updates", label: "Discussion" },
     { value: "files", label: `Photos & files (${documents.length})` },
     { value: "approvals", label: "Approvals" },
+    { value: "payments", label: "Payments" },
     { value: "details", label: "Details" },
     ...(me?.isAdmin ? [{ value: "team", label: "Team" }] : []),
   ];
@@ -75,6 +77,7 @@ function ProjectPage() {
         qc.invalidateQueries({ queryKey: ["comments", id] }, { throwOnError: true }),
         qc.invalidateQueries({ queryKey: ["daily-updates"] }, { throwOnError: true }),
         qc.invalidateQueries({ queryKey: ["project-activity"] }, { throwOnError: true }),
+        qc.invalidateQueries({ queryKey: ["project-finance", id] }, { throwOnError: true }),
       ]);
     } catch { toast.error("Some project information could not be refreshed. Check your connection and try again."); }
     finally { setRefreshing(false); }
@@ -156,6 +159,9 @@ function ProjectPage() {
         </TabsContent>
         <TabsContent value="approvals" className="mt-6">
           <ApprovalOverview projectId={id} tasks={tasks} onOpen={(task) => setOpenId(task.id)} />
+        </TabsContent>
+        <TabsContent value="payments" className="mt-6">
+          <ProjectPayments key={id} projectId={id} />
         </TabsContent>
         <TabsContent value="details" className="mt-6">
           <ProjectDetails key={id} project={project} canEdit={canEdit} onChange={m.refresh} />

@@ -3,6 +3,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import type { FinanceBundle } from "../lib/project-finance";
 
 const admin = "00000000-0000-0000-0000-000000000001";
 const partner = "00000000-0000-0000-0000-000000000002";
@@ -34,7 +35,7 @@ beforeAll(async () => {
     create function auth.uid() returns uuid language sql stable as $$
       select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
     $$;
-    create table storage.buckets (id text primary key, name text, public boolean not null default false, file_size_limit bigint);
+    create table storage.buckets (id text primary key, name text, public boolean not null default false, file_size_limit bigint, allowed_mime_types text[]);
     create table storage.objects (
       id uuid primary key default gen_random_uuid(), bucket_id text not null,
       name text not null, metadata jsonb default '{}', unique(bucket_id, name)
@@ -455,5 +456,284 @@ describe("atomic project-plan import", () => {
       await expect(asActor(admin, "update public.projects set meeting_url=$1 where id=$2", [url, project])).rejects.toThrow();
     }
     await asActor(admin, "update public.projects set meeting_url='https://team.calendly.com/review' where id=$1", [project]);
+  });
+});
+
+describe("private project finance and offline payment ledger", () => {
+  const milestoneOne = "50000000-0000-0000-0000-000000000001";
+  const milestoneTwo = "50000000-0000-0000-0000-000000000002";
+  const paymentOne = "60000000-0000-0000-0000-000000000001";
+  const paymentTwo = "60000000-0000-0000-0000-000000000002";
+  const paymentThree = "60000000-0000-0000-0000-000000000003";
+  const plan = (extra: Record<string, unknown> = {}) => ({
+    total_minor: 1_000_000, currency: "INR", quote_label: "Agreed interior work",
+    scope_notes: "Private commercial scope", payment_instructions: "Private bank instructions",
+    partner_summary_visible: false, ...extra,
+  });
+  const milestones = () => [
+    { id: milestoneOne, label: "Mobilisation", amount_minor: 600_000, due_date: null, due_condition: "Admin marks this due", position: 0, is_due: true },
+    { id: milestoneTwo, label: "Handover", amount_minor: 400_000, due_date: null, due_condition: "After agreed handover", position: 1, is_due: false },
+  ] satisfies [Record<string, unknown>, Record<string, unknown>];
+  const payment = (id = paymentOne, extra: Record<string, unknown> = {}) => ({
+    id, kind: "receipt", purpose: "advance", amount_minor: 300_000, paid_on: "2020-01-01",
+    method: "Bank transfer", reference: "PRIVATE-REFERENCE", notes: "Initial advance received offline",
+    proof_path: null, related_payment_id: null, ...extra,
+  });
+  const allocation = (amount = 100_000, milestoneId = milestoneOne) => ({ milestone_id: milestoneId, amount_minor: amount });
+  const save = async (actor = admin, version = 0, planValue = plan(), milestoneValues: Record<string, unknown>[] = milestones(), projectId = project) =>
+    firstRow(await asActor<{ result: FinanceBundle }>(actor, "select public.save_project_finance($1,$2,$3::jsonb,$4::jsonb) as result",
+      [projectId, version, JSON.stringify(planValue), JSON.stringify(milestoneValues)])).result;
+  const get = async (actor: string | null = admin, projectId = project) =>
+    firstRow(await asActor<{ result: FinanceBundle }>(actor, "select public.get_project_finance($1) as result", [projectId])).result;
+  const record = async (actor = admin, value = payment(), allocations: Record<string, unknown>[] = [], projectId = project) =>
+    firstRow(await asActor<{ result: FinanceBundle }>(actor, "select public.record_project_payment($1,$2::jsonb,$3::jsonb) as result",
+      [projectId, JSON.stringify(value), JSON.stringify(allocations)])).result;
+  const review = async (id = paymentOne, decision = "confirm", reason = "", allocations: Record<string, unknown>[] | null = null, actor = admin) =>
+    firstRow(await asActor<{ result: FinanceBundle }>(actor, "select public.review_project_payment($1,$2,$3,$4::jsonb) as result",
+      [id, decision, reason, allocations === null ? null : JSON.stringify(allocations)])).result;
+  const allocate = async (id = paymentOne, allocations: Record<string, unknown>[] = [], actor = admin) =>
+    firstRow(await asActor<{ result: FinanceBundle }>(actor, "select public.allocate_project_payment($1,$2::jsonb) as result", [id, JSON.stringify(allocations)])).result;
+  const upload = (actor = client, path = `${project}/${actor}/${paymentOne}-receipt.pdf`, metadata: Record<string, unknown> = { size: 100, mimetype: "application/pdf" }) =>
+    asActor(actor, "insert into storage.objects(bucket_id,name,metadata) values ('project-finance',$1,$2::jsonb) returning id", [path, JSON.stringify(metadata)]);
+  const operator = async (sql: string, args: unknown[]) => {
+    await db.exec("savepoint storage_operator");
+    try {
+      await db.exec("set local role service_role");
+      const result = await db.query(sql, args);
+      await db.exec("reset role; release savepoint storage_operator");
+      return result;
+    } catch (error) {
+      await db.exec("rollback to savepoint storage_operator; release savepoint storage_operator");
+      throw error;
+    }
+  };
+
+  it("starts unset, denies outsiders, and keeps financial authority separate from project editing", async () => {
+    for (const actor of [admin, client]) expect(await get(actor)).toMatchObject({ configured: false, plan: null, summary: null, payments: [] });
+    expect(await get(partner)).toMatchObject({ access: "restricted", configured: false, plan: null });
+    for (const actor of [outsider, null]) await expect(get(actor)).rejects.toThrow();
+    for (const actor of [partner, client, outsider]) await expect(save(actor)).rejects.toThrow();
+    await expect(record()).rejects.toThrow("Configure");
+    await save();
+    for (const actor of [partner, outsider]) {
+      expect((await asActor(actor, "select project_id from public.project_finance")).rows).toEqual([]);
+      expect((await asActor(actor, "select id from public.project_payment_milestones")).rows).toEqual([]);
+      await expect(record(actor)).rejects.toThrow();
+    }
+    for (const actor of [admin, client]) {
+      await expect(asActor(actor, "update public.project_finance set total_minor=1 where project_id=$1", [project])).rejects.toThrow();
+      await expect(asActor(actor, "delete from public.project_finance where project_id=$1", [project])).rejects.toThrow();
+    }
+  });
+
+  it("accepts empty or partial schedules, validates integer money and saves plans atomically with a version guard", async () => {
+    expect((await save(admin, 0, plan(), [])).plan?.version).toBe(1);
+    await expect(save()).rejects.toThrow("changed");
+    await expect(save(admin, 1, plan({ total_minor: 0 }), [])).rejects.toThrow();
+    await expect(save(admin, 1, plan({ total_minor: 1.5 }), [])).rejects.toThrow();
+    await expect(save(admin, 1, plan({ total_minor: 1_000_000_000_001 }), [])).rejects.toThrow();
+    await expect(save(admin, 1, plan({ currency: "USD" }), [])).rejects.toThrow();
+    await expect(save(admin, 1, plan(), [{ ...milestones()[0], amount_minor: 1_000_001 }])).rejects.toThrow("exceed");
+    await expect(save(admin, 1, plan(), [{ ...milestones()[0], amount_minor: 0 }])).rejects.toThrow();
+    await expect(save(admin, 1, plan(), [milestones()[0], milestones()[0]])).rejects.toThrow("unique");
+    expect((await get()).plan?.version).toBe(1);
+    const saved = await save(admin, 1, plan(), [milestones()[0]]);
+    expect(saved.plan?.version).toBe(2);
+    expect(saved.milestones).toHaveLength(1);
+    expect(saved.summary).toMatchObject({ outstanding_minor: 1_000_000, due_now_minor: 600_000 });
+  });
+
+  it("counts confirmed offline advances once and applies unallocated credit against due milestones", async () => {
+    await save();
+    const first = await record();
+    expect(first.summary).toMatchObject({ received_minor: 300_000, net_received_minor: 300_000, unallocated_minor: 300_000, outstanding_minor: 700_000, due_now_minor: 300_000 });
+    expect(first.payments[0]).toMatchObject({ status: "confirmed", created_by: admin, verified_by: admin, paid_on: "2020-01-01" });
+    expect(first.payments[0]).not.toHaveProperty("request_payload");
+    const retry = await record();
+    expect(retry.payments).toHaveLength(1);
+    expect(retry.audit).toHaveLength(first.audit.length);
+    await expect(record(admin, payment(paymentOne, { amount_minor: 300_001 }))).rejects.toThrow("already used");
+    await expect(record(admin, payment(paymentOne, { notes: "different" }))).rejects.toThrow("already used");
+    expect((await get()).summary?.received_minor).toBe(300_000);
+  });
+
+  it("treats client reports as pending until an admin verifies and prevents forged authority or allocation", async () => {
+    await save();
+    const pending = await record(client, payment(paymentOne, { amount_minor: 200_000 }));
+    expect(pending.payments[0]).toMatchObject({ status: "reported", created_by: client, verified_by: null, verified_at: null });
+    expect(pending.summary).toMatchObject({ pending_minor: 200_000, received_minor: 0, outstanding_minor: 1_000_000, due_now_minor: 600_000 });
+    expect(pending.audit).toEqual([]);
+    await expect(record(client, payment(paymentTwo), [allocation()])).rejects.toThrow("admin");
+    expect((await get()).milestones.every((row) => !row.has_history)).toBe(true);
+    await expect(record(client, payment(paymentTwo, { status: "confirmed" }))).rejects.toThrow("Unsupported");
+    await expect(record(client, payment(paymentTwo, { created_by: admin }))).rejects.toThrow("Unsupported");
+    await expect(record(client, payment(paymentTwo, { kind: "refund", related_payment_id: paymentOne }))).rejects.toThrow();
+    for (const actor of [client, partner, outsider]) await expect(review(paymentOne, "confirm", "", null, actor)).rejects.toThrow();
+    const confirmed = await review(paymentOne, "confirm", "Verified against bank", [allocation(100_000)]);
+    expect(confirmed.summary).toMatchObject({ pending_minor: 0, received_minor: 200_000, unallocated_minor: 100_000, due_now_minor: 400_000 });
+    expect(confirmed.milestones[0]).toMatchObject({ paid_minor: 100_000, has_history: true });
+    expect(confirmed.payments[0]).toMatchObject({ status: "confirmed", created_by: client, verified_by: admin, review_reason: "Verified against bank" });
+    const repeated = await review(paymentOne, "confirm", "Verified against bank", [allocation(100_000)]);
+    expect(repeated.audit).toHaveLength(confirmed.audit.length);
+    await expect(review(paymentOne, "confirm", "Changed reason")).rejects.toThrow();
+  });
+
+  it("requires reasons for rejection and voiding and does not turn rejected reports into paid money", async () => {
+    await save();
+    await record(client);
+    await expect(review(paymentOne, "reject")).rejects.toThrow("reason");
+    await expect(review(paymentOne, "void")).rejects.toThrow("reason");
+    const rejected = await review(paymentOne, "reject", "Reference not found");
+    expect(rejected.summary).toMatchObject({ received_minor: 0, pending_minor: 0 });
+    expect(rejected.payments[0]?.status).toBe("rejected");
+    expect((await review(paymentOne, "reject", "Reference not found")).audit).toHaveLength(rejected.audit.length);
+    await expect(review(paymentOne, "confirm")).rejects.toThrow();
+    await record(admin, payment(paymentTwo));
+    const voided = await review(paymentTwo, "void", "Duplicate manual entry");
+    expect(voided.summary).toMatchObject({ received_minor: 0, pending_minor: 0 });
+    expect((await review(paymentTwo, "void", "Duplicate manual entry")).audit).toHaveLength(voided.audit.length);
+  });
+
+  it("splits an advance over several milestones, preserves history, and rolls back invalid reallocations", async () => {
+    await save();
+    await record(admin, payment(paymentOne, { amount_minor: 500_000 }), [allocation(200_000), allocation(100_000, milestoneTwo)]);
+    expect((await get()).summary?.unallocated_minor).toBe(200_000);
+    await expect(allocate(paymentOne, [allocation(500_001)])).rejects.toThrow("Allocations exceed");
+    await expect(allocate(paymentOne, [allocation(100_000), allocation(100_000)])).rejects.toThrow("once");
+    expect((await get()).milestones.map((row) => row.paid_minor)).toEqual([200_000, 100_000]);
+    await expect(save(admin, 1, plan(), [milestones()[0]])).rejects.toThrow("history");
+    await expect(save(admin, 1, plan(), [{ ...milestones()[0], amount_minor: 199_999 }, milestones()[1]])).rejects.toThrow("Confirmed milestone");
+    const changed = await allocate(paymentOne, [allocation(300_000), allocation(200_000, milestoneTwo)]);
+    expect(changed.summary?.unallocated_minor).toBe(0);
+    expect(changed.milestones.map((row) => row.paid_minor)).toEqual([300_000, 200_000]);
+    await allocate(paymentOne, []);
+    await expect(save(admin, 1, plan(), [])).rejects.toThrow("history");
+    await expect(allocate(paymentOne, [], client)).rejects.toThrow();
+  });
+
+  it("rejects overfunded and cross-project allocations without changing either project", async () => {
+    await save();
+    const foreign = "50000000-0000-0000-0000-000000000003";
+    await save(admin, 0, plan(), [{ ...milestones()[0], id: foreign }], otherProject);
+    await expect(record(admin, payment(), [allocation(100, foreign)])).rejects.toThrow("this project");
+    await record(admin, payment(paymentOne, { amount_minor: 600_000 }), [allocation(600_000)]);
+    await expect(record(admin, payment(paymentTwo, { amount_minor: 1 }), [allocation(1)])).rejects.toThrow("Confirmed milestone");
+    await expect(save(admin, 1, plan(), [{ ...milestones()[0], id: foreign }])).rejects.toThrow("another project");
+    expect((await get()).payments).toHaveLength(1);
+    expect((await get(admin, otherProject)).payments).toHaveLength(0);
+  });
+
+  it("bounds refunds by their original allocated and unallocated amounts and preserves an immutable ledger", async () => {
+    await save();
+    await record(admin, payment(paymentOne, { amount_minor: 500_000 }), [allocation(300_000)]);
+    const refund = payment(paymentTwo, { kind: "refund", purpose: "other", amount_minor: 250_000, paid_on: "2020-01-02", related_payment_id: paymentOne });
+    await expect(record(admin, refund)).rejects.toThrow("unallocated credit");
+    const refunded = await record(admin, refund, [allocation(100_000)]);
+    expect(refunded.summary).toMatchObject({ received_minor: 500_000, refunded_minor: 250_000, net_received_minor: 250_000, unallocated_minor: 50_000, outstanding_minor: 750_000 });
+    expect(refunded.milestones[0]?.paid_minor).toBe(200_000);
+    await expect(record(admin, payment(paymentThree, { ...refund, id: paymentThree, amount_minor: 250_001 }), [allocation(200_000)])).rejects.toThrow("Refunds require");
+    await expect(record(admin, payment(paymentThree, { ...refund, id: paymentThree, amount_minor: 200_001 }), [allocation(200_001)])).rejects.toThrow();
+    await expect(record(admin, payment(paymentThree, { ...refund, id: paymentThree, amount_minor: 50_001 }))).rejects.toThrow("unallocated credit");
+    await expect(record(admin, payment(paymentThree, { ...refund, id: paymentThree, paid_on: "2019-12-31", amount_minor: 1 }))).rejects.toThrow("valid refund date");
+    await expect(review(paymentOne, "void", "Correct source")).rejects.toThrow("linked refunds");
+    await expect(allocate(paymentOne, [])).rejects.toThrow("linked refunds");
+    await expect(asActor(admin, "update public.project_payments set amount_minor=1 where id=$1", [paymentOne])).rejects.toThrow();
+    await expect(asActor(admin, "delete from public.project_payments where id=$1", [paymentTwo])).rejects.toThrow();
+    await review(paymentTwo, "void", "Refund entry corrected");
+    expect((await review(paymentOne, "void", "Receipt entry corrected")).summary?.net_received_minor).toBe(0);
+  });
+
+  it("enforces actual nonfuture dates, finite safe integer bounds, and receipts may exceed the quote as visible credit", async () => {
+    await save(admin, 0, plan({ total_minor: 100 }), []);
+    for (const value of [0, -1, 0.5, 1_000_000_000_001, "100"]) await expect(record(admin, payment(paymentOne, { amount_minor: value }))).rejects.toThrow();
+    for (const paid_on of ["9999-12-31", "infinity", "2020-02-30"]) await expect(record(admin, payment(paymentOne, { paid_on }))).rejects.toThrow();
+    const received = await record(admin, payment(paymentOne, { amount_minor: 1_000_000_000_000 }));
+    expect(received.summary).toMatchObject({ outstanding_minor: 0, credit_minor: 999_999_999_900 });
+    await expect(record(admin, payment(paymentTwo, { amount_minor: 1 }))).rejects.toThrow("supported amount range");
+    expect((await get()).payments).toHaveLength(1);
+  });
+
+  it("uses only explicit payment flags or dates for due amounts rather than work-stage changes", async () => {
+    await save(admin, 0, plan(), [{ ...milestones()[0], is_due: false, due_date: "2020-01-01" }, milestones()[1]]);
+    expect((await get()).summary?.due_now_minor).toBe(600_000);
+    await asActor(partner, "update public.tasks set status='done' where id=$1", [task]);
+    expect((await get()).summary?.due_now_minor).toBe(600_000);
+    await save(admin, 1, plan(), milestones().map((row) => ({ ...row, is_due: false })));
+    expect((await get()).summary?.due_now_minor).toBe(0);
+  });
+
+  it("shares only an explicitly enabled summary with partners and records finance privately outside work activity", async () => {
+    const before = firstRow(await db.query<{ count: string }>("select count(*)::text as count from public.project_activity where project_id=$1", [project])).count;
+    await save();
+    await record();
+    expect((await get(partner)).configured).toBe(false);
+    await save(admin, 1, plan({ partner_summary_visible: true }));
+    const shared = await get(partner);
+    expect(shared).toMatchObject({ access: "partner", configured: true, payments: [], allocations: [], audit: [] });
+    expect(shared.plan).not.toHaveProperty("scope_notes");
+    expect(shared.plan).not.toHaveProperty("payment_instructions");
+    expect(shared.plan).not.toHaveProperty("created_by");
+    expect(JSON.stringify(shared)).not.toContain("PRIVATE-REFERENCE");
+    for (const table of ["project_finance", "project_payment_milestones", "project_payments", "project_payment_allocations", "project_finance_audit"]) {
+      const column = table === "project_finance" ? "project_id" : table === "project_payment_allocations" ? "payment_id" : "id";
+      expect((await asActor(partner, `select ${column} from public.${table}`)).rows).toEqual([]);
+    }
+    await expect(asActor(client, "select request_payload from public.project_payments")).rejects.toThrow();
+    expect((await get()).audit.every((row) => row.actor_id === admin && Date.parse(row.created_at) > Date.parse("2020-01-01"))).toBe(true);
+    expect((await asActor(client, "select id from public.project_finance_audit")).rows).toEqual([]);
+    await save(admin, 2, plan({ partner_summary_visible: false }));
+    expect((await get(partner)).configured).toBe(false);
+    const after = firstRow(await db.query<{ count: string }>("select count(*)::text as count from public.project_activity where project_id=$1", [project])).count;
+    expect(after).toBe(before);
+  });
+
+  it("uses a private proof bucket with owner uploads and denies partner/outsider file access", async () => {
+    await save();
+    const path = `${project}/${client}/${paymentOne}-receipt.pdf`;
+    await upload(client, path);
+    for (const actor of [admin, client, otherClient]) expect((await asActor(actor, "select name from storage.objects where bucket_id='project-finance'")).rows).toEqual([{ name: path }]);
+    for (const actor of [partner, outsider]) {
+      expect((await asActor(actor, "select name from storage.objects where bucket_id='project-finance'")).rows).toEqual([]);
+      await expect(upload(actor)).rejects.toThrow();
+    }
+    await expect(upload(client, `${project}/${admin}/${paymentTwo}-forged.pdf`)).rejects.toThrow();
+    await expect(upload(client, `${otherProject}/${client}/${paymentTwo}-other.pdf`)).rejects.toThrow();
+    await expect(upload(client, `${project}/${client}/${paymentTwo}-unsafe.svg`)).rejects.toThrow();
+    await expect(asActor(null, "select name from storage.objects where bucket_id='project-finance'")).rejects.toThrow();
+    await expect(record(otherClient, payment(paymentOne, { proof_path: path }))).rejects.toThrow("this project");
+    const attached = await record(admin, payment(paymentOne, { proof_path: path }));
+    expect(attached.payments[0]?.proof_path).toBe(path);
+    await save(admin, 1, plan({ partner_summary_visible: true }));
+    expect((await asActor(partner, "select name from storage.objects where bucket_id='project-finance'")).rows).toEqual([]);
+  });
+
+  it("retains linked proof evidence through voids, blocks operator deletion/overwrite, and allows unused own-upload cleanup", async () => {
+    await save();
+    const linked = `${project}/${client}/${paymentOne}-receipt.pdf`;
+    const unused = `${project}/${client}/${paymentTwo}-unused.pdf`;
+    await upload(client, linked);
+    await upload(client, unused);
+    await record(client, payment(paymentOne, { proof_path: linked }));
+    expect((await asActor(client, "delete from storage.objects where bucket_id='project-finance' and name=$1 returning name", [linked])).rows).toEqual([]);
+    expect((await asActor(otherClient, "delete from storage.objects where bucket_id='project-finance' and name=$1 returning name", [unused])).rows).toEqual([]);
+    expect((await asActor(client, "delete from storage.objects where bucket_id='project-finance' and name=$1 returning name", [unused])).rows).toEqual([{ name: unused }]);
+    await expect(operator("delete from storage.objects where bucket_id='project-finance' and name=$1", [linked])).rejects.toThrow("retained");
+    await expect(operator("update storage.objects set name=$2 where bucket_id='project-finance' and name=$1", [linked, unused])).rejects.toThrow("retained");
+    await expect(operator("update storage.objects set metadata='{}' where bucket_id='project-finance' and name=$1", [linked])).rejects.toThrow("retained");
+    await review(paymentOne, "void", "Invalid receipt report");
+    await expect(operator("delete from storage.objects where bucket_id='project-finance' and name=$1", [linked])).rejects.toThrow("retained");
+  });
+
+  it("rejects missing, oversized or mismatched proof metadata when attaching a payment", async () => {
+    await save();
+    const path = `${project}/${client}/${paymentOne}-receipt.pdf`;
+    await expect(record(client, payment(paymentOne, { proof_path: path }))).rejects.toThrow("Finish uploading");
+    await upload(client, path, { size: 5_242_881, mimetype: "application/pdf" });
+    await expect(record(client, payment(paymentOne, { proof_path: path }))).rejects.toThrow("Finish uploading");
+    await operator("update storage.objects set metadata=$2::jsonb where name=$1", [path, JSON.stringify({ size: 100 })]);
+    await expect(record(client, payment(paymentOne, { proof_path: path }))).rejects.toThrow("Finish uploading");
+    await operator("update storage.objects set metadata=$2::jsonb where name=$1", [path, JSON.stringify({ size: 100, mimetype: "image/png" })]);
+    await expect(record(client, payment(paymentOne, { proof_path: path }))).rejects.toThrow("Finish uploading");
+    expect((await get()).payments).toEqual([]);
   });
 });

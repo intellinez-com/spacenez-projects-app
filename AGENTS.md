@@ -12,8 +12,10 @@
 ## Architecture rules
 - Daily status comes from `project_activity`, written automatically by database triggers when project work changes. Portal/API accounts only read this history; they cannot insert or rewrite events. Existing `project_daily_updates` rows are retained as optional notes. Never infer historical work completion from a task's current status or `updated_at`.
 - Access control lives in database policies (has_role / can_view_project / can_edit_project); UI checks only hide controls. Why: clients and partners must never read projects they aren't members of.
+- Project finance uses checked database RPCs and its own audit. Only admins configure/confirm/correct payments; project clients can report pending receipts. Never use can_edit_project to authorize finance writes: it also grants partners editing access. Partner finance summaries require explicit admin opt-in, and exclude payment records and proofs.
 - Global roles (admin/partner/client) live in user_roles; per-project access lives in project_members.access ('partner' edits, 'client' views+comments). Why: same person can have different access per project.
 - Accounts are invite-only: public sign-up is disabled and admins create users via the createPortalUser server function; the first account ever created becomes admin via trigger.
 - Project files go in the private `project-files` bucket under `<project_id>/...` and are opened via signed URLs. Why: storage policies key off the first folder.
+- Payment proofs use the separate private `project-finance` bucket under `<project_id>/<uploader_id>/...`; referenced proofs are retained and partners cannot read them. Why: payment evidence has narrower access than ordinary project files.
 - Project stages/statuses are defined in src/lib/constants.ts (text columns, not enums). Why: easy to rename/extend without migrations.
 - Brand identity is shown through src/components/BrandMark.tsx (the supplied logo asset, with a recoloured light variant for the dark sidebar) and never redrawn, restyled or retyped as text. Why: the uploaded logo is the approved brand mark and must stay consistent across surfaces.

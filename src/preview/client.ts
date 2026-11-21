@@ -2,9 +2,19 @@
 import { createClient, type User } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { createPreviewFixtures, previewIds } from "./fixtures";
+import { createPreviewFinance } from "./finance";
+import type { FinancePayment } from "@/lib/project-finance";
 
 export { previewIds } from "./fixtures";
 const fixture = createPreviewFixtures();
+const finance = createPreviewFinance();
+const financeReports = new Map<string, string>();
+const financeProofs = new Map<string, Blob>();
+export function localFinanceProof(projectId: string, path: string): Blob {
+  const proof = financeProofs.get(path);
+  if (projectId !== previewIds.project || !path.startsWith(`${projectId}/${previewIds.client}/`) || !proof) throw new Error("Sample payment proof not found.");
+  return proof;
+}
 const base = typeof window === "undefined" ? "http://127.0.0.1:4173" : window.location.origin;
 const storageKey = "spacenez-local-client-preview";
 export const previewUser: User = {
@@ -40,7 +50,8 @@ export const previewFetch: typeof fetch = async (input, init) => {
   const url = new URL(request.url);
   if (url.origin !== base) return denied("The local preview cannot contact an external backend.");
   const path = url.pathname;
-  const body = request.method === "GET" || request.method === "HEAD" ? {} : await request.json().catch(() => ({})) as Record<string, unknown>;
+  const financeUpload = request.method === "POST" && path.startsWith("/storage/v1/object/project-finance/");
+  const body = request.method === "GET" || request.method === "HEAD" || financeUpload ? {} : await request.json().catch(() => ({})) as Record<string, unknown>;
   if (path.startsWith("/auth/v1/")) {
     if (path === "/auth/v1/user" && request.method === "GET") return json(previewUser);
     if (path === "/auth/v1/token" && request.method === "POST") {
@@ -59,8 +70,45 @@ export const previewFetch: typeof fetch = async (input, init) => {
     const filePath = decodeURIComponent(path.slice("/storage/v1/object/sign/project-files/".length));
     return allowed(filePath) ? json({ signedURL: signed(filePath) }) : denied("Sample file not found.");
   }
+  if (financeUpload) {
+    const filePath = decodeURIComponent(path.slice("/storage/v1/object/project-finance/".length));
+    if (!filePath.startsWith(`${previewIds.project}/${previewIds.client}/`) || filePath.split("/").length !== 3) return denied();
+    const uploaded = request.headers.get("content-type")?.startsWith("multipart/")
+      ? Array.from((await request.formData()).values()).find((value): value is File => typeof value !== "string")
+      : await request.blob();
+    if (!uploaded || uploaded.size === 0 || uploaded.size > 5 * 1024 * 1024 || !["application/pdf", "image/png", "image/jpeg", "image/webp"].includes(uploaded.type)) return denied("Use a PDF, PNG, JPEG or WebP up to 5 MB.");
+    financeProofs.set(filePath, uploaded);
+    return json({ Key: `project-finance/${filePath}`, Id: crypto.randomUUID() });
+  }
+  if (path === "/storage/v1/object/project-finance" && request.method === "DELETE") {
+    const paths = body["prefixes"];
+    if (!Array.isArray(paths) || paths.some((value) => typeof value !== "string" || !financeProofs.has(value) || finance.payments.some((payment) => payment.proof_path === value))) return denied();
+    for (const value of paths) financeProofs.delete(String(value));
+    return json([]);
+  }
+  if (path.startsWith("/storage/v1/object/sign/project-finance/")) {
+    const filePath = decodeURIComponent(path.slice("/storage/v1/object/sign/project-finance/".length));
+    const file = financeProofs.get(filePath);
+    if (!file) return denied("Sample payment proof not found.");
+    if (request.method === "POST") return json({ signedURL: `/object/sign/project-finance/${filePath}?token=local-preview` });
+    if (request.method === "GET" && url.searchParams.get("token") === "local-preview") return new Response(file, { headers: { "Content-Type": file.type } });
+    return denied();
+  }
   if (path.startsWith("/rest/v1/rpc/")) {
     const rpc = path.slice("/rest/v1/rpc/".length);
+    if (rpc === "get_project_finance" && request.method === "POST") return body["p_project_id"] === previewIds.project ? json(finance) : denied();
+    if (rpc === "record_project_payment" && request.method === "POST") {
+      const payment = body["p_payment"] as Record<string, unknown> | undefined;
+      if (body["p_project_id"] !== previewIds.project || !payment || typeof payment["id"] !== "string") return denied();
+      const previous = financeReports.get(payment["id"]);
+      if (previous) return previous === JSON.stringify(body) ? json(finance) : denied("This sample payment identifier was already used.");
+      if (payment["kind"] !== "receipt" || !Number.isSafeInteger(payment["amount_minor"]) || Number(payment["amount_minor"]) <= 0 || Number(payment["amount_minor"]) > 1e12 || typeof payment["paid_on"] !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(payment["paid_on"]) || (payment["proof_path"] != null && !financeProofs.has(String(payment["proof_path"])))) return denied("The sample payment report is invalid.");
+      const report: FinancePayment = { id: payment["id"], project_id: previewIds.project, kind: "receipt", purpose: payment["purpose"] === "advance" ? "advance" : "payment", amount_minor: Number(payment["amount_minor"]), paid_on: payment["paid_on"], method: String(payment["method"] ?? ""), reference: String(payment["reference"] ?? ""), notes: String(payment["notes"] ?? ""), proof_path: payment["proof_path"] ? String(payment["proof_path"]) : null, status: "reported", created_by: previewIds.client, created_at: new Date().toISOString(), verified_by: null, verified_at: null, review_reason: "", related_payment_id: null };
+      finance.payments.unshift(report);
+      if (finance.summary) finance.summary.pending_minor += report.amount_minor;
+      financeReports.set(report.id, JSON.stringify(body));
+      return json(finance);
+    }
     if (rpc === "respond_task_approval" && request.method === "POST") {
       const approval = fixture.task_approvals.find((entry) => entry.id === body["p_approval_id"]);
       const decision = body["p_decision"];

@@ -39,6 +39,8 @@ Build the complete `.output` directory on the deployment OS. Configure public bu
 
 `deploy/DAILY-STATUS.txt` describes automatic project activity and its applied migrations. The database records actors, times and actual changes; current overall task totals remain separate from the dated change history. Posting a daily report is not required.
 
+`deploy/PAYMENTS.txt` describes configurable project payment tracking: agreed totals, milestones, advances, partial receipts, client reports and admin verification. Financial details start unset; admins enter the actual agreement. Online collection and recurring subscriptions require a separate gateway integration.
+
 Never commit filled environment files, client import files, data exports, credentials or `.migration-private`. Git and Docker exclusions cover these paths.
 
 Built with TanStack Start, React, TypeScript, Tailwind CSS and Supabase. Originally created in Lovable; this checkout is prepared for company infrastructure deployment.
