@@ -20,6 +20,10 @@ npm run dev:client
 
 Open http://127.0.0.1:4173/dashboard. Sample sign-in is `client@example.test` / `preview-client`. Preview changes reset on refresh. This mode cannot be built for deployment.
 
+For admin payment setup, open http://127.0.0.1:4173/dashboard?previewRole=admin. This isolated mode has a fictional admin, a blank payment plan, and in-memory quote/milestone/advance entry. The banner can show a proposed client payment screen and demo checkout; no bank or live database is contacted. Production client Payments stays hidden pending explicit launch approval.
+
+The project importer accepts `.xlsx` and UTF-8 `.csv` and offers an Excel-readable template. Admins review task dates, source owners and stage mappings before creation; prepared JSON is an advanced support option. In the local preview, file review works and final project creation is disabled. See `deploy/ADMIN-REVIEW.txt`.
+
 On the migration operator's Windows machine only, `npm run dev:target` uses the encrypted local connection configuration and serves the real destination at http://127.0.0.1:4174. Other checkouts should use normal environment configuration.
 
 The initial client login is stored only in the operator's encrypted local files. The operator can view it privately with `npm run client:credentials` and hand it over through the approved private channel. This command is not for CI; its output must not be committed or posted in chat.

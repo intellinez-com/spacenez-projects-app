@@ -2,24 +2,25 @@
 import { createClient, type User } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { createPreviewFixtures, previewIds } from "./fixtures";
-import { createPreviewFinance } from "./finance";
-import type { FinancePayment } from "@/lib/project-finance";
+import { createPreviewFinanceSession, PreviewFinanceError } from "./finance";
+import { localPreviewRole } from "./role";
 
 export { previewIds } from "./fixtures";
-const fixture = createPreviewFixtures();
-const finance = createPreviewFinance();
-const financeReports = new Map<string, string>();
+export const previewRole = localPreviewRole();
+const fixture = createPreviewFixtures(previewRole);
 const financeProofs = new Map<string, Blob>();
+const actorId = previewRole === "admin" ? previewIds.admin : previewIds.client;
+const finance = createPreviewFinanceSession(previewRole, actorId, (path) => financeProofs.has(path));
 export function localFinanceProof(projectId: string, path: string): Blob {
   const proof = financeProofs.get(path);
-  if (projectId !== previewIds.project || !path.startsWith(`${projectId}/${previewIds.client}/`) || !proof) throw new Error("Sample payment proof not found.");
+  if (projectId !== previewIds.project || !path.startsWith(`${projectId}/`) || !proof) throw new Error("Sample payment proof not found.");
   return proof;
 }
 const base = typeof window === "undefined" ? "http://127.0.0.1:4173" : window.location.origin;
-const storageKey = "spacenez-local-client-preview";
+const storageKey = `spacenez-local-${previewRole}-preview`;
 export const previewUser: User = {
-  id: previewIds.client, aud: "authenticated", role: "authenticated", email: "client@example.test",
-  app_metadata: { provider: "email", providers: ["email"] }, user_metadata: { full_name: "Sample Client" },
+  id: actorId, aud: "authenticated", role: "authenticated", email: previewRole === "admin" ? "admin@example.test" : "client@example.test",
+  app_metadata: { provider: "email", providers: ["email"] }, user_metadata: { full_name: previewRole === "admin" ? "Sample Admin" : "Sample Client" },
   created_at: new Date().toISOString(), email_confirmed_at: new Date().toISOString(),
 };
 function encode(value: unknown) { return btoa(JSON.stringify(value)).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_"); }
@@ -55,7 +56,7 @@ export const previewFetch: typeof fetch = async (input, init) => {
   if (path.startsWith("/auth/v1/")) {
     if (path === "/auth/v1/user" && request.method === "GET") return json(previewUser);
     if (path === "/auth/v1/token" && request.method === "POST") {
-      if (url.searchParams.get("grant_type") !== "refresh_token" && (body["email"] !== "client@example.test" || body["password"] !== "preview-client")) return json({ msg: "Use client@example.test and preview-client for this local preview." }, 400);
+      if (url.searchParams.get("grant_type") !== "refresh_token" && (body["email"] !== previewUser.email || body["password"] !== `preview-${previewRole}`)) return json({ msg: `Use ${previewUser.email} and preview-${previewRole} for this local preview.` }, 400);
       return json(session());
     }
     if (path === "/auth/v1/logout") return json(null, 204);
@@ -72,7 +73,7 @@ export const previewFetch: typeof fetch = async (input, init) => {
   }
   if (financeUpload) {
     const filePath = decodeURIComponent(path.slice("/storage/v1/object/project-finance/".length));
-    if (!filePath.startsWith(`${previewIds.project}/${previewIds.client}/`) || filePath.split("/").length !== 3) return denied();
+    if (!finance.read().configured || !filePath.startsWith(`${previewIds.project}/${actorId}/`) || filePath.split("/").length !== 3) return denied();
     const uploaded = request.headers.get("content-type")?.startsWith("multipart/")
       ? Array.from((await request.formData()).values()).find((value): value is File => typeof value !== "string")
       : await request.blob();
@@ -82,7 +83,7 @@ export const previewFetch: typeof fetch = async (input, init) => {
   }
   if (path === "/storage/v1/object/project-finance" && request.method === "DELETE") {
     const paths = body["prefixes"];
-    if (!Array.isArray(paths) || paths.some((value) => typeof value !== "string" || !financeProofs.has(value) || finance.payments.some((payment) => payment.proof_path === value))) return denied();
+    if (!Array.isArray(paths) || paths.some((value) => typeof value !== "string" || !financeProofs.has(value) || finance.read().payments.some((payment) => payment.proof_path === value))) return denied();
     for (const value of paths) financeProofs.delete(String(value));
     return json([]);
   }
@@ -96,18 +97,19 @@ export const previewFetch: typeof fetch = async (input, init) => {
   }
   if (path.startsWith("/rest/v1/rpc/")) {
     const rpc = path.slice("/rest/v1/rpc/".length);
-    if (rpc === "get_project_finance" && request.method === "POST") return body["p_project_id"] === previewIds.project ? json(finance) : denied();
-    if (rpc === "record_project_payment" && request.method === "POST") {
-      const payment = body["p_payment"] as Record<string, unknown> | undefined;
-      if (body["p_project_id"] !== previewIds.project || !payment || typeof payment["id"] !== "string") return denied();
-      const previous = financeReports.get(payment["id"]);
-      if (previous) return previous === JSON.stringify(body) ? json(finance) : denied("This sample payment identifier was already used.");
-      if (payment["kind"] !== "receipt" || !Number.isSafeInteger(payment["amount_minor"]) || Number(payment["amount_minor"]) <= 0 || Number(payment["amount_minor"]) > 1e12 || typeof payment["paid_on"] !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(payment["paid_on"]) || (payment["proof_path"] != null && !financeProofs.has(String(payment["proof_path"])))) return denied("The sample payment report is invalid.");
-      const report: FinancePayment = { id: payment["id"], project_id: previewIds.project, kind: "receipt", purpose: payment["purpose"] === "advance" ? "advance" : "payment", amount_minor: Number(payment["amount_minor"]), paid_on: payment["paid_on"], method: String(payment["method"] ?? ""), reference: String(payment["reference"] ?? ""), notes: String(payment["notes"] ?? ""), proof_path: payment["proof_path"] ? String(payment["proof_path"]) : null, status: "reported", created_by: previewIds.client, created_at: new Date().toISOString(), verified_by: null, verified_at: null, review_reason: "", related_payment_id: null };
-      finance.payments.unshift(report);
-      if (finance.summary) finance.summary.pending_minor += report.amount_minor;
-      financeReports.set(report.id, JSON.stringify(body));
-      return json(finance);
+    if (["get_project_finance", "save_project_finance", "record_project_payment", "review_project_payment", "allocate_project_payment"].includes(rpc) && request.method === "POST") {
+      if (["get_project_finance", "save_project_finance", "record_project_payment"].includes(rpc) && body["p_project_id"] !== previewIds.project) return denied();
+      try {
+        if (rpc === "get_project_finance") return json(finance.read());
+        if (rpc === "save_project_finance") return json(finance.save(body["p_expected_version"], body["p_plan"], body["p_milestones"]));
+        if (rpc === "record_project_payment") return json(finance.record(body["p_payment"], body["p_allocations"]));
+        if (rpc === "review_project_payment") return json(finance.review(body["p_payment_id"], body["p_decision"], body["p_reason"], body["p_allocations"]));
+        return json(finance.allocate(body["p_payment_id"], body["p_allocations"]));
+      } catch (error) {
+        const code = error instanceof PreviewFinanceError ? error.code : "22023";
+        const message = error instanceof Error ? error.message : "Invalid sample payment details.";
+        return json({ code, message, error: message }, code === "42501" ? 403 : ["23505", "40001"].includes(code) ? 409 : 400);
+      }
     }
     if (rpc === "respond_task_approval" && request.method === "POST") {
       const approval = fixture.task_approvals.find((entry) => entry.id === body["p_approval_id"]);
@@ -118,7 +120,7 @@ export const previewFetch: typeof fetch = async (input, init) => {
       approval.state = decision as "approved" | "changes_requested"; approval.decided_by = previewIds.client; approval.decided_at = new Date().toISOString(); approval.feedback = feedback;
       return json(approval);
     }
-    if (rpc === "has_role") return json(body["_role"] === "client");
+    if (rpc === "has_role") return json(body["_role"] === previewRole && (body["_user_id"] == null || body["_user_id"] === actorId));
     return denied();
   }
   if (!path.startsWith("/rest/v1/")) return denied("Unknown local preview endpoint.");
