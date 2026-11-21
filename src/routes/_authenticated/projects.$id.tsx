@@ -61,7 +61,8 @@ function ProjectPage() {
     { value: "updates", label: "Discussion" },
     { value: "files", label: `Photos & files (${documents.length})` },
     { value: "approvals", label: "Approvals" },
-    { value: "payments", label: "Payments" },
+    // Keep finance preparation with admins until the client rollout is ready.
+    ...(me?.isAdmin ? [{ value: "payments", label: "Payments" }] : []),
     { value: "details", label: "Details" },
     ...(me?.isAdmin ? [{ value: "team", label: "Team" }] : []),
   ];
@@ -160,9 +161,11 @@ function ProjectPage() {
         <TabsContent value="approvals" className="mt-6">
           <ApprovalOverview projectId={id} tasks={tasks} onOpen={(task) => setOpenId(task.id)} />
         </TabsContent>
-        <TabsContent value="payments" className="mt-6">
-          <ProjectPayments key={id} projectId={id} />
-        </TabsContent>
+        {me?.isAdmin && (
+          <TabsContent value="payments" className="mt-6">
+            <ProjectPayments key={id} projectId={id} />
+          </TabsContent>
+        )}
         <TabsContent value="details" className="mt-6">
           <ProjectDetails key={id} project={project} canEdit={canEdit} onChange={m.refresh} />
         </TabsContent>

@@ -1,5 +1,10 @@
 Project payment tracking — 2026-11-21
 
+Rollout is paused for clients and partners. Project navigation and the Payments
+content are currently admin-only, so admins can prepare actual agreements first.
+Re-enable the client/partner section only when the owner explicitly requests launch.
+This UI rollout setting does not replace the database access policies below.
+
 Setup and use
 - Open a project > Payments. An admin enters the agreed INR project total, scope,
   payment instructions and milestone schedule, then explicitly saves and shares it.
