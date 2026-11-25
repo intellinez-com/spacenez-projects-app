@@ -1,4 +1,4 @@
-Local admin review — 2026-11-21
+Local admin review — 2026-11-25
 
 No changes from this review branch are deployed. Production client/partner Payments
 remains hidden; the owner must explicitly request launch before it is re-enabled.
@@ -8,8 +8,25 @@ http://127.0.0.1:4173/dashboard?previewRole=admin
 The preview uses a fictional account and a closed in-memory transport. It cannot
 write to Supabase, send invitations or take payment. Refresh resets sample changes.
 
+Task sheet walkthrough
+1. Open the sample project. Admins/partners start on Tasks; clients start on Progress.
+2. Add task is at the top. Enter a task name and choose a stage, including stages
+   with no tasks yet. Enter or Add task saves it. Failed saves retain the draft.
+3. Change status, owner, priority and start/due dates directly in the task row.
+   Use the task-name edit action to rename it. The local sample keeps changes in
+   memory only. Real project changes continue using existing database policies
+   and trigger-written activity; this UI change needs no database migration.
+4. Row Comments and Files open that part of the task panel directly. The panel
+   retains task description, approval workflow, attachment handling and comments.
+5. Search/filter tasks or collapse a stage to focus the sheet. Laptop/tablet rows
+   scroll within the sheet; phone rows stay compact and expose fields on demand.
+6. Main navigation is Tasks, Progress, Photos & files and Approvals. More contains
+   discussion, summary, project details, admin Team/Payments and alternate views.
+7. Client Progress still shows automatic Today / This week / So far activity.
+   Client/partner Payments remains hidden pending the owner's launch instruction.
+
 Payment walkthrough (example figures, not RCF's agreement)
-1. Open the sample project > Payments > Set up payment plan.
+1. Open the sample project > More > Payments > Set up payment plan.
 2. Enter an agreed total of 500000 rupees and an example agreement reference.
 3. Use the optional 30 / 25 / 25 / 20 schedule. This gives milestones of
    150000, 125000, 125000 and 100000 rupees. Rename them and enter the actual due
@@ -19,7 +36,7 @@ Payment walkthrough (example figures, not RCF's agreement)
    and optionally a reference/proof. Allocate 50000 to the first milestone. Save.
 5. Confirmed paid is 50000, total remaining is 450000, and the first milestone
    has 100000 due. The advance is counted once against the project total.
-6. In the preview banner, Review client payment screen > Pay online shows a local
+6. In the preview banner, Payment demo > Review client payment screen > Pay online shows a local
    checkout demonstration. It does not mark money paid or contact a provider.
 
 Online collection remains unconfigured. Dodo's published Merchant Acceptance Policy

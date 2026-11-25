@@ -4,6 +4,7 @@ import type { Database } from "@/integrations/supabase/types";
 import { createPreviewFixtures, previewIds } from "./fixtures";
 import { createPreviewFinanceSession, PreviewFinanceError } from "./finance";
 import { localPreviewRole } from "./role";
+import { STAGES, STATUSES, PRIORITIES } from "@/lib/constants";
 
 export { previewIds } from "./fixtures";
 export const previewRole = localPreviewRole();
@@ -35,6 +36,26 @@ function json(value: unknown, status = 200, headers: Record<string, string> = {}
 function denied(message = "This action is unavailable in the local client preview.") { return json({ code: "PREVIEW_ONLY", message, error: message }, 403); }
 
 type PreviewRow = Record<string, unknown>;
+type PreviewTask = Database["public"]["Tables"]["tasks"]["Row"];
+const taskFields = ["title", "description", "status", "stage", "priority", "assignee_id", "start_date", "due_date", "position"] as const;
+function validTask(task: PreviewTask) {
+  const date = (value: unknown) => value === null || (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value);
+  return typeof task.title === "string" && !!task.title.trim() && (task.description === null || typeof task.description === "string")
+    && STAGES.some((stage) => stage.key === task.stage) && STATUSES.some((status) => status.key === task.status) && PRIORITIES.some((priority) => priority.key === task.priority)
+    && (task.assignee_id === null || fixture.profiles.some((profile) => profile.id === task.assignee_id))
+    && date(task.start_date) && date(task.due_date) && Number.isSafeInteger(task.position) && task.position >= 0;
+}
+function taskActivity(task: PreviewTask, previous?: PreviewTask) {
+  const changes = previous ? Object.fromEntries(taskFields.filter((field) => previous[field] !== task[field]).map((field) => [field, { from: previous[field], to: task[field] }])) : {};
+  if (previous && !Object.keys(changes).length) return;
+  fixture.project_activity.push({ id: crypto.randomUUID(), project_id: previewIds.project, actor_id: actorId, kind: previous ? "task_updated" : "task_created", occurred_at: task.updated_at, source_type: "tasks", source_id: task.id, task_id: task.id, payload: { title: task.title, status: task.status, stage: task.stage, changes } });
+}
+function mutationResponse(request: Request, rows: PreviewRow[], status = 200) {
+  if (!request.headers.get("prefer")?.includes("return=representation")) return json(null, status === 201 ? 201 : 204);
+  return request.headers.get("accept")?.includes("application/vnd.pgrst.object+json")
+    ? rows.length === 1 ? json(rows[0], status) : json({ code: "PGRST116", message: "No matching sample record." }, 406)
+    : json(rows, status);
+}
 function rowsFor(table: string): PreviewRow[] | null {
   if (!(table in fixture)) return null;
   const rows = fixture[table as keyof typeof fixture] as unknown as PreviewRow[];
@@ -125,12 +146,45 @@ export const previewFetch: typeof fetch = async (input, init) => {
   }
   if (!path.startsWith("/rest/v1/")) return denied("Unknown local preview endpoint.");
   const table = path.slice("/rest/v1/".length);
+  if (table === "tasks" && (request.method === "POST" || request.method === "PATCH")) {
+    if (previewRole !== "admin" || !body || typeof body !== "object" || Array.isArray(body)) return denied("Only the local admin can edit sample tasks.");
+    const allowed = request.method === "POST" ? [...taskFields, "project_id", "created_by"] : taskFields;
+    if (Object.keys(body).some((field) => !allowed.some((allowedField) => allowedField === field))) return denied("Only editable sample task fields can be changed.");
+    if (request.method === "POST") {
+      if (body["project_id"] !== previewIds.project || body["created_by"] !== actorId) return denied("The sample task must belong to this project and admin.");
+      const now = new Date().toISOString();
+      const task: PreviewTask = {
+        id: crypto.randomUUID(), project_id: previewIds.project, created_by: actorId, title: "", description: null, stage: "planning", status: "not_started", priority: "medium", assignee_id: null, start_date: null, due_date: null,
+        position: Math.max(-1, ...fixture.tasks.map((entry) => entry.position)) + 1, created_at: now, updated_at: now, content_revision: 1, source_id: null, source_metadata: {},
+        ...body,
+      };
+      if (!validTask(task)) return denied("Enter a valid sample task title, stage, owner and dates.");
+      task.title = task.title.trim();
+      fixture.tasks.push(task);
+      taskActivity(task);
+      return mutationResponse(request, [task], 201);
+    }
+    if (url.searchParams.get("project_id") !== `eq.${previewIds.project}` || !url.searchParams.get("id")?.startsWith("eq.") || Array.from(url.searchParams.keys()).some((key) => !["id", "project_id", "select"].includes(key))) return denied("Choose one task in the sample project before updating it.");
+    const task = fixture.tasks.find((entry) => `eq.${entry.id}` === url.searchParams.get("id"));
+    if (!task) return mutationResponse(request, []);
+    const previous = { ...task };
+    const next = { ...task, ...body };
+    if (!validTask(next)) return denied("Enter a valid sample task title, stage, owner and dates.");
+    next.title = next.title.trim();
+    if (taskFields.some((field) => previous[field] !== next[field])) {
+      next.updated_at = new Date().toISOString();
+      if (["title", "description", "stage"].some((field) => previous[field as keyof PreviewTask] !== next[field as keyof PreviewTask])) next.content_revision += 1;
+      Object.assign(task, next);
+      taskActivity(task, previous);
+    }
+    return mutationResponse(request, [task]);
+  }
   if (request.method === "POST" && table === "comments") {
     const taskId = body["task_id"];
-    if (body["project_id"] !== previewIds.project || body["user_id"] !== previewIds.client || typeof body["body"] !== "string" || !body["body"].trim() || (taskId !== null && !fixture.tasks.some((task) => task.id === taskId))) return denied("The sample comment is invalid.");
-    const comment = { id: crypto.randomUUID(), project_id: previewIds.project, task_id: typeof taskId === "string" ? taskId : null, user_id: previewIds.client, body: body["body"].trim(), created_at: new Date().toISOString() };
+    if (body["project_id"] !== previewIds.project || body["user_id"] !== actorId || typeof body["body"] !== "string" || !body["body"].trim() || (taskId !== null && !fixture.tasks.some((task) => task.id === taskId))) return denied("The sample comment is invalid.");
+    const comment = { id: crypto.randomUUID(), project_id: previewIds.project, task_id: typeof taskId === "string" ? taskId : null, user_id: actorId, body: body["body"].trim(), created_at: new Date().toISOString() };
     fixture.comments.push(comment);
-    fixture.project_activity.push({ id: crypto.randomUUID(), project_id: previewIds.project, actor_id: previewIds.client, kind: "comment_added", occurred_at: comment.created_at, source_type: "comments", source_id: comment.id, task_id: comment.task_id, payload: { body: comment.body, task_title: fixture.tasks.find((task) => task.id === comment.task_id)?.title ?? null } });
+    fixture.project_activity.push({ id: crypto.randomUUID(), project_id: previewIds.project, actor_id: actorId, kind: "comment_added", occurred_at: comment.created_at, source_type: "comments", source_id: comment.id, task_id: comment.task_id, payload: { body: comment.body, task_title: fixture.tasks.find((task) => task.id === comment.task_id)?.title ?? null } });
     return json(null, 201);
   }
   if (request.method !== "GET" && request.method !== "HEAD") return denied();

@@ -20,7 +20,9 @@ npm run dev:client
 
 Open http://127.0.0.1:4173/dashboard. Sample sign-in is `client@example.test` / `preview-client`. Preview changes reset on refresh. This mode cannot be built for deployment.
 
-For admin payment setup, open http://127.0.0.1:4173/dashboard?previewRole=admin. This isolated mode has a fictional admin, a blank payment plan, and in-memory quote/milestone/advance entry. The banner can show a proposed client payment screen and demo checkout; no bank or live database is contacted. Production client Payments stays hidden pending explicit launch approval.
+For admin review, open http://127.0.0.1:4173/dashboard?previewRole=admin. Projects open on a spreadsheet task sheet with inline status, owner, dates and priority, plus row comments/files. Adding and editing sample tasks stays in memory; Progress shows the sample activity automatically. Clients open on Progress with read-only tasks. The four main sections are Tasks, Progress, Photos & files, and Approvals; More contains secondary project options.
+
+Admin payment setup is under More > Payments. The isolated demo has a blank payment plan and in-memory quote/milestone/advance entry. Payment demo in the preview banner can show a proposed client payment screen and demo checkout; no bank or live database is contacted. Production client Payments stays hidden pending explicit launch approval.
 
 The project importer accepts `.xlsx` and UTF-8 `.csv` and offers an Excel-readable template. Admins review task dates, source owners and stage mappings before creation; prepared JSON is an advanced support option. In the local preview, file review works and final project creation is disabled. See `deploy/ADMIN-REVIEW.txt`.
 

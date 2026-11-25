@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { format, formatDistanceToNow, isValid, parseISO } from "date-fns";
 import { Paperclip, Trash2, FileText } from "lucide-react";
@@ -22,6 +22,7 @@ type TaskSheetProps = {
   currentUserId: string | null;
   people: Profile[];
   docs: Doc[];
+  initialSection?: "comments" | "files" | undefined;
   onClose: () => void;
   onUpdate: (id: string, patch: Partial<Task>) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
@@ -31,8 +32,10 @@ export function TaskSheet(props: TaskSheetProps) {
   return props.task ? <TaskSheetContent key={props.task.id} {...props} task={props.task} /> : null;
 }
 
-function TaskSheetContent({ task, projectId, canEdit, canApprove, currentUserId, people, docs, onClose, onUpdate, onDelete }: Omit<TaskSheetProps, "task"> & { task: Task }) {
+function TaskSheetContent({ task, projectId, canEdit, canApprove, currentUserId, people, docs, initialSection, onClose, onUpdate, onDelete }: Omit<TaskSheetProps, "task"> & { task: Task }) {
   const qc = useQueryClient();
+  const commentInput = useRef<HTMLTextAreaElement>(null);
+  const filesHeading = useRef<HTMLHeadingElement>(null);
   const [body, setBody] = useState("");
   const [posting, setPosting] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -40,6 +43,20 @@ function TaskSheetContent({ task, projectId, canEdit, canApprove, currentUserId,
   const [deleting, setDeleting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [commentError, setCommentError] = useState<string | null>(null);
+
+  const focusInitialSection = useCallback(() => {
+    if (!initialSection) return;
+    const target = initialSection === "comments" ? commentInput.current : filesHeading.current;
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView({ block: initialSection === "comments" ? "nearest" : "start" });
+  }, [initialSection]);
+
+  useEffect(() => {
+    // Also follow a new shortcut target while the same task panel remains open.
+    const timer = window.setTimeout(focusInitialSection, 0);
+    return () => window.clearTimeout(timer);
+  }, [focusInitialSection, task.id]);
+
   const { data: comments, refetch, isPending: commentsPending, isError: commentsFailed, error: commentsError } = useQuery({
     queryKey: ["comments", projectId, task.id],
     queryFn: async () => {
@@ -136,7 +153,7 @@ function TaskSheetContent({ task, projectId, canEdit, canApprove, currentUserId,
 
   return (
     <Sheet open={!!task} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent className="h-dvh max-h-dvh w-full max-w-full overflow-x-hidden overflow-y-auto overscroll-contain px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] sm:max-w-lg sm:px-6 sm:pt-6">
+      <SheetContent onOpenAutoFocus={(event) => { if (initialSection) { event.preventDefault(); focusInitialSection(); } }} className="h-dvh max-h-dvh w-full max-w-full overflow-x-hidden overflow-y-auto overscroll-contain px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] sm:max-w-lg sm:px-6 sm:pt-6">
         <SheetHeader className="mb-5 min-h-11 text-left">
           <SheetTitle className="pr-12 text-left [overflow-wrap:anywhere]">{canEdit ? "Task details" : task.title}</SheetTitle>
           <SheetDescription className="sr-only">Review task details, files, client approval and comments.</SheetDescription>
@@ -203,12 +220,12 @@ function TaskSheetContent({ task, projectId, canEdit, canApprove, currentUserId,
 
           <TaskApprovalPanel task={task} projectId={projectId} canEdit={canEdit} canApprove={canApprove} currentUserId={currentUserId} people={people} disabled={saving || uploading || deleting} />
 
-          <div>
-            <div className="flex items-center justify-between">
-              <p className="eyebrow">Files</p>
+          <section aria-labelledby={`task-files-${task.id}`}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 id={`task-files-${task.id}`} ref={filesHeading} tabIndex={-1} className="scroll-mt-4 rounded-sm text-base font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Files</h3>
               {canEdit && (
-                <label className="flex min-h-11 cursor-pointer items-center gap-1 rounded-md px-2 text-sm text-oak hover:underline focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
-                  <Paperclip className="h-4 w-4" /> {uploading ? "Uploading…" : "Attach"}
+                <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md border bg-background px-3 text-sm font-medium hover:bg-muted focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
+                  <Paperclip className="h-4 w-4" /> {uploading ? "Uploading…" : "Attach files"}
                   <input type="file" multiple aria-label="Attach task files" className="sr-only" disabled={uploading || saving || deleting} onChange={onFile} />
                 </label>
               )}
@@ -224,10 +241,16 @@ function TaskSheetContent({ task, projectId, canEdit, canApprove, currentUserId,
                 </li>
               ))}
             </ul>
-          </div>
+          </section>
 
-          <div>
-            <p className="eyebrow">Comments</p>
+          <section aria-labelledby={`task-comments-${task.id}`}>
+            <h3 id={`task-comments-${task.id}`} className="text-base font-medium">Comments</h3>
+            <form onSubmit={postComment} className="mt-3 space-y-2">
+              <Label htmlFor={`task-comment-${task.id}`} className="text-sm">Add a comment or note</Label>
+              <Textarea id={`task-comment-${task.id}`} ref={commentInput} placeholder="Write a comment…" className="min-h-24 scroll-mt-4 resize-y text-base md:text-sm" value={body} onChange={(e) => setBody(e.target.value)} disabled={posting} rows={2} />
+              {commentError && <p role="alert" className="text-sm text-destructive">{commentError}</p>}
+              <Button type="submit" size="sm" className="min-h-11 w-full whitespace-normal text-sm sm:w-auto" disabled={posting || !body.trim()}>{posting ? "Posting…" : "Post comment"}</Button>
+            </form>
             {commentsPending && <p className="mt-2 text-sm text-muted-foreground">Loading comments…</p>}
             {commentsFailed && <div role="alert" className="mt-2 text-sm text-destructive">
               <p>Could not load comments: {errorMessage(commentsError)}</p>
@@ -244,12 +267,7 @@ function TaskSheetContent({ task, projectId, canEdit, canApprove, currentUserId,
                 </li>
               ))}
             </ul>
-            <form onSubmit={postComment} className="mt-3 space-y-2">
-              <Textarea placeholder="Write a comment…" className="min-h-24 resize-y text-base md:text-sm" value={body} onChange={(e) => setBody(e.target.value)} disabled={posting} rows={2} />
-              {commentError && <p role="alert" className="text-sm text-destructive">{commentError}</p>}
-              <Button type="submit" size="sm" className="min-h-11 w-full whitespace-normal text-sm sm:w-auto" disabled={posting || !body.trim()}>{posting ? "Posting…" : "Post comment"}</Button>
-            </form>
-          </div>
+          </section>
 
           {canEdit && (
             <Button variant="ghost" size="sm" disabled={saving || uploading || deleting} className="min-h-11 w-full whitespace-normal text-sm text-destructive sm:w-auto" onClick={() => void deleteTask()}>
