@@ -7,11 +7,11 @@ import { statusBg } from "@/components/StatusPill";
 import { isTaskOverdue } from "@/lib/task-dates";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import type { Task, Profile, Doc } from "./data";
+import type { Task, ProjectPerson, Doc } from "./data";
 
 type Common = {
   tasks: Task[];
-  people: Profile[];
+  people: ProjectPerson[];
   canEdit: boolean;
   onOpen: (t: Task, section?: "comments" | "files") => void;
   onUpdate: (id: string, patch: Partial<Task>) => Promise<void>;
@@ -36,7 +36,7 @@ const statusTone: Record<string, string> = {
   done: "bg-status-done/15",
 };
 const displayDate = (date: string | null) => date ? format(parseISO(date), "d MMM yyyy") : "Not set";
-function displayOwner(id: string | null, people: Profile[]) {
+function displayOwner(id: string | null, people: ProjectPerson[]) {
   if (!id) return "Not assigned";
   const owner = people.find((person) => person.id === id);
   return owner?.full_name ?? owner?.email ?? "Assigned team member";
@@ -194,7 +194,7 @@ export function TableView({ tasks, people, canEdit, onOpen, onUpdate, onAdd, doc
 
 type RowProps = {
   task: Task;
-  people: Profile[];
+  people: ProjectPerson[];
   canEdit: boolean;
   onOpen: Common["onOpen"];
   state: RowState;

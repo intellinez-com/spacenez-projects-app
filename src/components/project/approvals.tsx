@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { stageLabel } from "@/lib/constants";
-import { errorMessage, openDoc, type Profile, type Task } from "./data";
+import { errorMessage, openDoc, type ProjectPerson, type Task } from "./data";
 
 type Approval = {
   id: string;
@@ -149,7 +149,7 @@ export function TaskApprovalPanel({ task, projectId, currentUserId, canEdit, can
   currentUserId: string | null;
   canEdit: boolean;
   canApprove: boolean;
-  people: Profile[];
+  people: ProjectPerson[];
   disabled?: boolean;
 }) {
   const qc = useQueryClient();
