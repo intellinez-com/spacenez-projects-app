@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { STAGES, STATUSES, PRIORITIES, stageLabel, statusLabel } from "@/lib/constants";
-import { type Task, type Profile, type Doc, uploadDoc, openDoc, fmtSize, errorMessage } from "./data";
+import { type Task, type ProjectPerson, type Doc, uploadDoc, openDoc, fmtSize, errorMessage } from "./data";
 import { TaskApprovalPanel } from "./approvals";
 
 type TaskSheetProps = {
@@ -20,7 +20,7 @@ type TaskSheetProps = {
   canEdit: boolean;
   canApprove: boolean;
   currentUserId: string | null;
-  people: Profile[];
+  people: ProjectPerson[];
   docs: Doc[];
   initialSection?: "comments" | "files" | undefined;
   onClose: () => void;

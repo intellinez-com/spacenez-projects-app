@@ -45,12 +45,11 @@ function ProjectPage() {
   if (error && !data?.project) return <div className="space-y-3 p-8"><p role="alert" className="text-destructive">Project data could not be loaded. {error.message}</p><Button onClick={() => void refetch()}>Retry</Button></div>;
   if (!data?.project) return <p className="p-8 text-muted-foreground">Project not found or you don't have access.</p>;
 
-  const { project, tasks, members, documents } = data;
+  const { project, tasks, members, documents, people } = data;
   const myAccess = members.find((x) => x.user_id === me?.id)?.access;
   const canEdit = !!me?.isAdmin || myAccess === "partner";
   const canApprove = myAccess === "client";
   const meetingUrl = safeMeetingUrl(project.meeting_url);
-  const people = members.map((x) => x.profile).filter(Boolean) as Profile[];
   const openTask = tasks.find((t) => t.id === openId) ?? null;
   const pct = progressOf(tasks);
   const projectContext = [projectTypeLabel(project.project_type), project.client_brand?.trim() || project.client_name?.trim()].filter(Boolean).join(" · ");

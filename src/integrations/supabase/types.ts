@@ -625,6 +625,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_project_task_people: {
+        Args: { p_project_id: string }
+        Returns: { id: string; full_name: string; email: string | null }[]
+      }
       get_project_finance: {
         Args: { p_project_id: string }
         Returns: Json

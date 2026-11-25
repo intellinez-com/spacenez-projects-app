@@ -4,11 +4,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fmtSize, loadProject, openDoc, uploadDoc, useTaskMutations } from "./data";
 
 const mocks = vi.hoisted(() => ({
-  from: vi.fn(), getUser: vi.fn(), storageFrom: vi.fn(),
+  from: vi.fn(), rpc: vi.fn(), getUser: vi.fn(), storageFrom: vi.fn(),
   upload: vi.fn(), remove: vi.fn(), createSignedUrl: vi.fn(), toastError: vi.fn(),
 }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: {
-  from: mocks.from, auth: { getUser: mocks.getUser }, storage: { from: mocks.storageFrom },
+  from: mocks.from, rpc: mocks.rpc, auth: { getUser: mocks.getUser }, storage: { from: mocks.storageFrom },
 } }));
 vi.mock("sonner", () => ({ toast: { error: mocks.toastError } }));
 
@@ -23,6 +23,7 @@ function query(result: { data: unknown; error: unknown }) {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.rpc.mockResolvedValue({ data: [], error: null });
   mocks.getUser.mockResolvedValue({ data: { user: { id: "user" } }, error: null });
   mocks.upload.mockResolvedValue({ error: null });
   mocks.remove.mockResolvedValue({ error: null });
@@ -30,6 +31,42 @@ beforeEach(() => {
 });
 
 describe("project request reliability", () => {
+  it("loads checked owner options including an admin who is not a project member", async () => {
+    const member = { user_id: "client", access: "client", profile: { id: "client", full_name: "Sample client" } };
+    const owners = [
+      { id: "admin", full_name: "Sample admin", email: "admin@example.test" },
+      { id: "client", full_name: "Sample client", email: "client@example.test" },
+    ];
+    mocks.from.mockImplementation((table: string) => query({ data: table === "projects" ? { id: "project" } : table === "project_members" ? [member] : [], error: null }));
+    mocks.rpc.mockResolvedValue({ data: owners, error: null });
+    const result = await loadProject("project");
+    expect(mocks.rpc).toHaveBeenCalledWith("get_project_task_people", { p_project_id: "project" });
+    expect(result.members).toEqual([member]);
+    expect(result.people).toEqual(owners);
+    expect(mocks.from).not.toHaveBeenCalledWith("profiles");
+    expect(mocks.from).not.toHaveBeenCalledWith("user_roles");
+  });
+
+  it("reports owner lookup errors instead of silently showing an incomplete list", async () => {
+    mocks.from.mockImplementation((table: string) => query({ data: table === "projects" ? { id: "project" } : [], error: null }));
+    mocks.rpc.mockResolvedValue({ data: null, error: { message: "Owner lookup unavailable" } });
+    await expect(loadProject("project")).rejects.toThrow("Task owners could not be loaded. Owner lookup unavailable");
+  });
+
+  it("rejects a missing owner response rather than treating it as an empty list", async () => {
+    mocks.from.mockImplementation((table: string) => query({ data: table === "projects" ? { id: "project" } : [], error: null }));
+    mocks.rpc.mockResolvedValue({ data: null, error: null });
+    await expect(loadProject("project")).rejects.toThrow("Task owners could not be loaded.");
+  });
+
+  it("does not request people for a project the viewer cannot see", async () => {
+    mocks.from.mockImplementation((table: string) => query({ data: table === "projects" ? null : [], error: null }));
+    const result = await loadProject("missing-project");
+    expect(result.project).toBeNull();
+    expect(result.people).toEqual([]);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
   it.each(["tasks", "project_members", "documents"])("fails the page when %s cannot be loaded", async (failedTable) => {
     const error = { message: `${failedTable} unavailable` };
     mocks.from.mockImplementation((table: string) => query({ data: table === "projects" ? { id: "project" } : [], error: table === failedTable ? error : null }));

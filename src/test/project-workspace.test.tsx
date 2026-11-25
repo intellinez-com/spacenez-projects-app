@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ id: "project-a", admin: false, access: "client", finance: vi.fn(), sheet: vi.fn() }));
+const mocks = vi.hoisted(() => ({ id: "project-a", admin: false, access: "client", finance: vi.fn(), sheet: vi.fn(), table: vi.fn() }));
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: Record<string, unknown>) => ({ options, useParams: () => ({ id: mocks.id }) }),
   Link: ({ to, children, ...props }: { to: string; children?: ReactNode }) => <a href={to} {...props}>{children}</a>,
@@ -14,16 +14,17 @@ vi.mock("@/components/project/data", () => ({
     project: { id: mocks.id, name: "Sample project", current_stage: "planning", project_type: "Office" },
     tasks: [{ id: "task-a", title: "Sample task", status: "not_started" }], documents: [],
     members: [{ user_id: "viewer", access: mocks.access }],
+    people: [{ id: "global-admin", full_name: "Sample admin", email: "admin@example.test" }],
   }, refetch: vi.fn() }),
   useTaskMutations: () => ({ update: vi.fn(), add: vi.fn(), remove: vi.fn(), refresh: vi.fn() }),
 }));
 vi.mock("@/components/project/Views", () => ({
-  TableView: ({ canEdit, onOpen, tasks }: { canEdit: boolean; onOpen: (task: unknown, section?: string) => void; tasks: unknown[] }) => <div>
+  TableView: ({ canEdit, onOpen, tasks, people }: { canEdit: boolean; onOpen: (task: unknown, section?: string) => void; tasks: unknown[]; people: unknown[] }) => { mocks.table({ people }); return <div>
     <p>{canEdit ? "Editable task sheet" : "Read-only task sheet"}</p>
     <button onClick={() => onOpen(tasks[0], "comments")}>Row comments</button>
     <button onClick={() => onOpen(tasks[0], "files")}>Row files</button>
     <button onClick={() => onOpen(tasks[0])}>Open row</button>
-  </div>,
+  </div>; },
   BoardView: () => <p>Alternate board</p>, TimelineView: () => <p>Alternate timeline</p>,
 }));
 vi.mock("@/components/project/DailyStatus", () => ({ DailyStatus: () => <p>Automatic daily progress</p> }));
@@ -47,6 +48,15 @@ beforeEach(() => { vi.clearAllMocks(); mocks.id = "project-a"; mocks.admin = fal
 afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()); });
 
 describe("Simple project workspace", () => {
+  it("uses checked project people for row and task-panel owners independently of membership", () => {
+    mocks.admin = true;
+    renderProject();
+    const people = [{ id: "global-admin", full_name: "Sample admin", email: "admin@example.test" }];
+    expect(mocks.table.mock.lastCall?.[0].people).toEqual(people);
+    fireEvent.click(screen.getByRole("button", { name: "Open row" }));
+    expect(mocks.sheet.mock.lastCall?.[0].people).toEqual(people);
+  });
+
   it.each(["admin", "partner"])("opens %s users directly on the editable task sheet", (role) => {
     mocks.admin = role === "admin"; mocks.access = role === "partner" ? "partner" : "client";
     renderProject();

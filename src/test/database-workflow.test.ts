@@ -108,6 +108,71 @@ async function attach() {
   await asActor(partner, "insert into public.documents(id,project_id,task_id,name,path,uploaded_by) values ($1,$2,$3,'proposal.pdf',$4,$5)", [documentId, project, task, documentPath, partner]);
 }
 
+describe("project task people directory", () => {
+  type Person = { id: string; full_name: string; email: string | null };
+  const directory = (actor: string | null, projectId: string = project) =>
+    asActor<Person>(actor, "select * from public.get_project_task_people($1)", [projectId]);
+
+  it("includes non-member global admins for both admin and partner editors without exposing unrelated accounts", async () => {
+    await db.query("delete from public.project_members where project_id=$1 and user_id=$2", [project, admin]);
+    for (const actor of [admin, partner]) {
+      const { rows } = await directory(actor);
+      expect(rows.map((person) => person.id).sort()).toEqual([admin, partner, client, otherClient].sort());
+      expect(rows.find((person) => person.id === admin)).toMatchObject({ full_name: "admin", email: "admin@example.test" });
+      expect(rows.some((person) => person.id === outsider)).toBe(false);
+    }
+    // Listing owners does not broaden the underlying profiles table policy.
+    expect((await asActor(partner, "select id from public.profiles where id=$1", [admin])).rows).toEqual([]);
+  });
+
+  it("lets clients resolve assigned admins while keeping unassigned admins and all emails out of the response", async () => {
+    await db.query("delete from public.project_members where project_id=$1 and user_id=$2", [project, admin]);
+    const before = await directory(client);
+    expect(before.rows.map((person) => person.id).sort()).toEqual([partner, client, otherClient].sort());
+    await db.query("update public.tasks set assignee_id=$1 where id=$2", [admin, task]);
+    const { rows } = await directory(client);
+    expect(rows.find((person) => person.id === admin)).toEqual({ id: admin, full_name: "admin", email: null });
+    expect(rows.every((person) => person.email === null)).toBe(true);
+    expect((await asActor(client, "select id from public.profiles where id=$1", [admin])).rows).toEqual([]);
+  });
+
+  it("retains the display of a current owner outside membership without listing unrelated global admins to clients", async () => {
+    await db.query("delete from public.project_members where project_id=$1 and user_id=$2", [project, admin]);
+    await db.query("update public.tasks set assignee_id=$1 where id=$2", [outsider, task]);
+    const editor = await directory(partner);
+    expect(editor.rows.find((person) => person.id === outsider)).toMatchObject({ full_name: "outsider", email: "outsider@example.test" });
+    const viewer = await directory(client);
+    expect(viewer.rows.find((person) => person.id === outsider)).toEqual({ id: outsider, full_name: "outsider", email: null });
+    expect(viewer.rows.some((person) => person.id === admin)).toBe(false);
+  });
+
+  it("deduplicates members, roles and assignments and supplies sorted nonempty display names", async () => {
+    await db.query("update public.tasks set assignee_id=$1 where id=$2", [admin, task]);
+    await db.query("update public.profiles set full_name='  ',email='fallback.owner@example.test' where id=$1", [admin]);
+    await db.query("update public.profiles set full_name=null,email=null where id=$1", [otherClient]);
+    const { rows } = await directory(admin);
+    expect(rows.filter((person) => person.id === admin)).toHaveLength(1);
+    expect(rows.find((person) => person.id === admin)).toMatchObject({ full_name: "fallback.owner" });
+    expect(rows.find((person) => person.id === otherClient)).toMatchObject({ full_name: "Team member" });
+    expect(rows.map((person) => person.full_name.toLowerCase())).toEqual([...rows.map((person) => person.full_name.toLowerCase())].sort());
+    expect(rows.every((person) => person.full_name.trim().length > 0)).toBe(true);
+  });
+
+  it("denies anonymous, unrelated-project and nonexistent-project lookups at both entry points", async () => {
+    await expect(directory(null)).rejects.toThrow();
+    await expect(directory(outsider)).rejects.toThrow("Project not found or access denied");
+    await expect(directory(partner, otherProject)).rejects.toThrow("Project not found or access denied");
+    await expect(directory(admin, "10000000-0000-0000-0000-000000000099")).rejects.toThrow("Project not found or access denied");
+    await expect(asActor(outsider, "select * from portal_people_private.get_project_task_people($1)", [project])).rejects.toThrow("Project not found or access denied");
+    await expect(asActor(null, "select * from portal_people_private.get_project_task_people($1)", [project])).rejects.toThrow();
+    const grants = firstRow(await db.query<{ anonymous_execute: boolean; wrapper_is_definer: boolean; helper_is_definer: boolean }>(`select
+      has_function_privilege('anon','public.get_project_task_people(uuid)','execute') as anonymous_execute,
+      (select prosecdef from pg_proc where oid='public.get_project_task_people(uuid)'::regprocedure) as wrapper_is_definer,
+      (select prosecdef from pg_proc where oid='portal_people_private.get_project_task_people(uuid)'::regprocedure) as helper_is_definer`));
+    expect(grants).toEqual({ anonymous_execute: false, wrapper_is_definer: false, helper_is_definer: true });
+  });
+});
+
 describe("published daily project updates", () => {
   const publish = (actor: string, projectId = project, workDone = "Site measurements completed") =>
     asActor(actor, "insert into public.project_daily_updates(project_id,work_done) values ($1,$2) returning *", [projectId, workDone]);
