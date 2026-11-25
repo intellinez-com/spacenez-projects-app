@@ -4,7 +4,7 @@ import { previewFetch, previewIds, supabase } from "./client";
 
 const realFetch = vi.spyOn(globalThis, "fetch").mockImplementation(() => { throw new Error("Preview must not use real fetch"); });
 afterAll(() => realFetch.mockRestore());
-afterEach(() => { vi.doUnmock("@/preview/role"); vi.resetModules(); });
+afterEach(() => { vi.doUnmock("@/preview/role"); vi.doUnmock("@/preview/fixtures"); vi.resetModules(); });
 
 describe("isolated client preview transport", () => {
   it("loads the sample client and their project membership using the actual SDK", async () => {
@@ -94,6 +94,67 @@ async function adminTransport() {
   vi.doMock("@/preview/role", () => ({ localPreviewRole: () => "admin" }));
   return import("./client");
 }
+
+async function clientWithExtraAdmin(assigned = false) {
+  vi.resetModules();
+  vi.doMock("@/preview/role", () => ({ localPreviewRole: () => "client" }));
+  vi.doMock("@/preview/fixtures", async (original) => {
+    const actual = await original<typeof import("./fixtures")>();
+    return { ...actual, createPreviewFixtures: (role: "client" | "admin") => {
+      const fixture = actual.createPreviewFixtures(role);
+      fixture.profiles.push({ id: previewIds.admin, full_name: " ", email: "sample-admin@example.test", company: null, created_at: fixture.profiles[0]!.created_at });
+      fixture.user_roles.push({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaab", user_id: previewIds.admin, role: "admin" });
+      if (assigned) fixture.tasks[0]!.assignee_id = previewIds.admin;
+      return fixture;
+    } };
+  });
+  return import("./client");
+}
+
+describe("isolated task-owner preview", () => {
+  it("includes the global admin without requiring project membership and deduplicates current owners", async () => {
+    const { supabase: admin } = await adminTransport();
+    const members = await admin.from("project_members").select("user_id").eq("project_id", previewIds.project);
+    expect(members.data?.some((member) => member.user_id === previewIds.admin)).toBe(false);
+    const owners = await admin.rpc("get_project_task_people", { p_project_id: previewIds.project });
+    expect(owners.error).toBeNull();
+    expect(owners.data).toEqual([
+      { id: previewIds.admin, full_name: "Sample Admin", email: "admin@example.test" },
+      { id: previewIds.client, full_name: "Sample Client", email: "client@example.test" },
+      { id: previewIds.designer, full_name: "Sample Designer", email: "designer@example.test" },
+    ]);
+    expect(realFetch).not.toHaveBeenCalled();
+  });
+
+  it("keeps an unassigned global admin out of the client response and hides emails", async () => {
+    const { supabase: client } = await clientWithExtraAdmin();
+    const owners = await client.rpc("get_project_task_people", { p_project_id: previewIds.project });
+    expect(owners.error).toBeNull();
+    expect(owners.data).toEqual([
+      { id: previewIds.client, full_name: "Sample Client", email: null },
+      { id: previewIds.designer, full_name: "Sample Designer", email: null },
+    ]);
+    expect(realFetch).not.toHaveBeenCalled();
+  });
+
+  it("lets a client resolve an assigned admin name without exposing their email", async () => {
+    const { supabase: client } = await clientWithExtraAdmin(true);
+    const owners = await client.rpc("get_project_task_people", { p_project_id: previewIds.project });
+    expect(owners.error).toBeNull();
+    expect(owners.data).toEqual(expect.arrayContaining([{ id: previewIds.admin, full_name: "sample-admin", email: null }]));
+    expect(owners.data?.filter((person) => person.id === previewIds.admin)).toHaveLength(1);
+    expect(realFetch).not.toHaveBeenCalled();
+  });
+
+  it("denies another project and forged actor parameters without contacting a backend", async () => {
+    const { supabase: admin, previewFetch: fetchAdmin } = await adminTransport();
+    const otherProject = await admin.rpc("get_project_task_people", { p_project_id: "99999999-9999-4999-8999-999999999999" });
+    expect(otherProject.error).toBeTruthy();
+    const forged = await fetchAdmin("http://127.0.0.1:4173/rest/v1/rpc/get_project_task_people", { method: "POST", body: JSON.stringify({ p_project_id: previewIds.project, p_user_id: previewIds.client }) });
+    expect(forged.status).toBe(403);
+    expect(realFetch).not.toHaveBeenCalled();
+  });
+});
 
 describe("isolated task-sheet admin preview", () => {
   it("adds a task through the SDK with real defaults and automatically records a fictional create event", async () => {

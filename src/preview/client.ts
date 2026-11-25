@@ -118,6 +118,24 @@ export const previewFetch: typeof fetch = async (input, init) => {
   }
   if (path.startsWith("/rest/v1/rpc/")) {
     const rpc = path.slice("/rest/v1/rpc/".length);
+    if (rpc === "get_project_task_people" && request.method === "POST") {
+      if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some((key) => key !== "p_project_id") || body["p_project_id"] !== previewIds.project || !fixture.projects.some((project) => project.id === body["p_project_id"])) return denied("Choose the sample project to load its task owners.");
+      const isAdmin = fixture.user_roles.some((role) => role.user_id === actorId && role.role === "admin");
+      const membership = fixture.project_members.find((member) => member.project_id === previewIds.project && member.user_id === actorId);
+      if (!fixture.profiles.some((profile) => profile.id === actorId) || (!isAdmin && !membership)) return denied("You do not have access to this sample project.");
+      const canEdit = isAdmin || membership?.access === "partner";
+      const eligible = new Set<string>([
+        ...fixture.project_members.filter((member) => member.project_id === previewIds.project).map((member) => member.user_id),
+        ...fixture.tasks.filter((task) => task.project_id === previewIds.project && task.assignee_id).map((task) => task.assignee_id!),
+        ...(canEdit ? fixture.user_roles.filter((role) => role.role === "admin").map((role) => role.user_id) : []),
+      ]);
+      const people = fixture.profiles.filter((profile) => eligible.has(profile.id)).map((profile) => ({
+        id: profile.id,
+        full_name: profile.full_name?.trim() || profile.email?.split("@")[0]?.trim() || "Team member",
+        email: canEdit ? profile.email : null,
+      })).sort((left, right) => left.full_name.localeCompare(right.full_name, undefined, { sensitivity: "base" }) || left.id.localeCompare(right.id));
+      return json(people);
+    }
     if (["get_project_finance", "save_project_finance", "record_project_payment", "review_project_payment", "allocate_project_payment"].includes(rpc) && request.method === "POST") {
       if (["get_project_finance", "save_project_finance", "record_project_payment"].includes(rpc) && body["p_project_id"] !== previewIds.project) return denied();
       try {
