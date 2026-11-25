@@ -41,6 +41,21 @@ afterEach(() => {
 });
 
 describe("task row shortcuts", () => {
+  it("keeps Close outside the scrolling task content when a phone opens comments", async () => {
+    const onClose = vi.fn();
+    show({ initialSection: "comments", canEdit: false, onClose });
+    const content = screen.getByRole("region", { name: "Task content" });
+    const close = screen.getByRole("button", { name: "Close" });
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Add a comment or note" })).toHaveFocus());
+    expect(content).toHaveClass("overflow-y-auto", "min-h-0");
+    expect(content).not.toContainElement(close);
+    expect(screen.getByRole("dialog")).toHaveClass("overflow-hidden", "flex-col");
+    content.scrollTop = 600;
+    fireEvent.scroll(content);
+    fireEvent.click(close);
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   it("does not jump to a section or focus the composer on an ordinary task open", async () => {
     show();
     await waitFor(() => expect(screen.queryByText("Loading comments…")).not.toBeInTheDocument());

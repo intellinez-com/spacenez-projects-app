@@ -7,10 +7,14 @@ import { Label } from "@/components/ui/label";
 import { BrandMark } from "@/components/BrandMark";
 import { errorMessage } from "@/lib/errors";
 import { useSavedSession } from "@/hooks/use-saved-session";
+import { authReturnDestination, safeAuthReturnTo } from "@/lib/auth-return";
 
 export const Route = createFileRoute("/auth")({
   codeSplitGroupings: [],
-  validateSearch: (search: Record<string, unknown>): { mode?: "forgot" } => search["mode"] === "forgot" ? { mode: "forgot" } : {},
+  validateSearch: (search: Record<string, unknown>): { mode?: "forgot"; returnTo?: string } => {
+    const returnTo = safeAuthReturnTo(search["returnTo"]);
+    return { ...(search["mode"] === "forgot" ? { mode: "forgot" as const } : {}), ...(returnTo ? { returnTo } : {}) };
+  },
   head: () => ({
     meta: [
       { title: "Sign in — Spacenez Track" },
@@ -26,13 +30,15 @@ function AuthPage() {
   const navigate = useNavigate();
   const search = Route.useSearch();
   const mode = search.mode === "forgot" ? "forgot" : "signin";
+  const returnTo = safeAuthReturnTo(search.returnTo);
+  const returnSearch = returnTo ? { returnTo } : {};
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const openSavedProjects = useCallback(() => navigate({ to: "/dashboard", replace: true }), [navigate]);
+  const openSavedProjects = useCallback(() => navigate({ ...authReturnDestination(returnTo), replace: true }), [navigate, returnTo]);
   const savedSession = useSavedSession({ enabled: mode === "signin", onVerified: openSavedProjects });
 
   async function submit(e: React.FormEvent) {
@@ -47,7 +53,7 @@ function AuthPage() {
       if (mode === "signin") {
         const result = await supabase.auth.signInWithPassword({ email: email.trim(), password });
         if (result.error) throw result.error;
-        await navigate({ to: "/dashboard" });
+        await navigate(authReturnDestination(returnTo));
       } else {
         const result = await supabase.auth.resetPasswordForEmail(email.trim(), {
           redirectTo: `${window.location.origin}/reset-password`,
@@ -55,7 +61,7 @@ function AuthPage() {
         if (result.error) throw result.error;
         setNotice("If an account matches this email, a reset link has been sent. Check your inbox and spam folder.");
         setPassword("");
-        await navigate({ to: "/auth", search: {}, replace: true });
+        await navigate({ to: "/auth", search: returnSearch, replace: true });
       }
     } catch (err) {
       setError(errorMessage(err, mode === "signin" ? "Could not sign in. Please try again." : "Could not request a reset link. Please try again."));
@@ -103,7 +109,7 @@ function AuthPage() {
             onClick={() => {
               savedSession.cancel();
               setError(""); setNotice(""); setPassword("");
-              void navigate({ to: "/auth", search: mode === "signin" ? { mode: "forgot" } : {}, replace: true }).catch((err: unknown) => setError(errorMessage(err, "Could not open this form. Please try again.")));
+              void navigate({ to: "/auth", search: { ...returnSearch, ...(mode === "signin" ? { mode: "forgot" as const } : {}) }, replace: true }).catch((err: unknown) => setError(errorMessage(err, "Could not open this form. Please try again.")));
             }}
           >
             {mode === "signin" ? "Forgot password?" : "Back to sign in"}

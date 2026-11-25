@@ -153,12 +153,12 @@ function TaskSheetContent({ task, projectId, canEdit, canApprove, currentUserId,
 
   return (
     <Sheet open={!!task} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent onOpenAutoFocus={(event) => { if (initialSection) { event.preventDefault(); focusInitialSection(); } }} className="h-dvh max-h-dvh w-full max-w-full overflow-x-hidden overflow-y-auto overscroll-contain px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] sm:max-w-lg sm:px-6 sm:pt-6">
-        <SheetHeader className="mb-5 min-h-11 text-left">
+      <SheetContent onOpenAutoFocus={(event) => { if (initialSection) { event.preventDefault(); focusInitialSection(); } }} className="flex h-dvh max-h-dvh w-full max-w-full flex-col gap-0 overflow-hidden px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] sm:max-w-lg sm:px-6 sm:pt-6">
+        <SheetHeader className="mb-5 max-h-[30dvh] min-h-11 shrink-0 overflow-y-auto text-left">
           <SheetTitle className="pr-12 text-left [overflow-wrap:anywhere]">{canEdit ? "Task details" : task.title}</SheetTitle>
           <SheetDescription className="sr-only">Review task details, files, client approval and comments.</SheetDescription>
         </SheetHeader>
-        <div className="min-w-0 space-y-5 [overflow-wrap:anywhere]">
+        <div role="region" aria-label="Task content" className="min-h-0 min-w-0 flex-1 space-y-5 overflow-y-auto overscroll-contain [overflow-wrap:anywhere]">
           {canEdit && <Input
             key={task.id + "t"}
             defaultValue={task.title}

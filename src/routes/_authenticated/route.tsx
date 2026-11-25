@@ -8,6 +8,7 @@ import { BrandMark } from "@/components/BrandMark";
 import { Button } from "@/components/ui/button";
 import { readPortalUser } from "@/lib/session";
 import { errorMessage } from "@/lib/errors";
+import { safeAuthReturnTo } from "@/lib/auth-return";
 
 const SIDEBAR_PREFERENCE = "spacenez-sidebar-collapsed";
 
@@ -23,8 +24,11 @@ export const Route = createFileRoute("/_authenticated")({
   pendingMinMs: 0,
   pendingComponent: SessionPending,
   errorComponent: SessionError,
-  beforeLoad: async () => {
-    if (!await readPortalUser()) throw redirect({ to: "/auth" });
+  beforeLoad: async ({ location }) => {
+    if (!await readPortalUser()) {
+      const returnTo = safeAuthReturnTo(location.pathname);
+      throw redirect({ to: "/auth", search: returnTo ? { returnTo } : {} });
+    }
   },
   component: Shell,
 });
