@@ -11,7 +11,6 @@ import { StageTrack } from "@/components/StatusPill";
 import { safeMeetingUrl } from "@/lib/meeting-url";
 import { errorMessage } from "@/lib/errors";
 import { projectTypeLabel } from "@/lib/project-type";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TableView, BoardView, TimelineView } from "@/components/project/Views";
@@ -22,6 +21,7 @@ import { ProjectOverview } from "@/components/project/ProjectOverview";
 import { ProjectUpdates } from "@/components/project/ProjectUpdates";
 import { DailyStatus } from "@/components/project/DailyStatus";
 import { ProjectPayments } from "@/components/project/ProjectPayments";
+import { ProjectNavigation } from "@/components/project/ProjectNavigation";
 import { useProject, useTaskMutations, uploadDoc, openDoc, fmtSize, type Task, type Profile, type Doc } from "@/components/project/data";
 
 export const Route = createFileRoute("/_authenticated/projects/$id")({
@@ -36,8 +36,9 @@ function ProjectPage() {
   const qc = useQueryClient();
   const m = useTaskMutations(id);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [openSection, setOpenSection] = useState<"comments" | "files" | undefined>();
   const [stageBusy, setStageBusy] = useState(false);
-  const [activeTab, setActiveTab] = useState("daily");
+  const [selectedSection, setSelectedSection] = useState<{ projectId: string; value: string } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   if (isLoading) return <p className="p-8 text-muted-foreground">Loading…</p>;
@@ -53,19 +54,11 @@ function ProjectPage() {
   const openTask = tasks.find((t) => t.id === openId) ?? null;
   const pct = progressOf(tasks);
   const projectContext = [projectTypeLabel(project.project_type), project.client_brand?.trim() || project.client_name?.trim()].filter(Boolean).join(" · ");
-  const sections = [
-    { value: "daily", label: "Daily status" },
-    { value: "overview", label: "Overview" },
-    { value: "table", label: "Work & dates" },
-    ...(canEdit ? [{ value: "board", label: "Board" }, { value: "timeline", label: "Timeline" }] : []),
-    { value: "updates", label: "Discussion" },
-    { value: "files", label: `Photos & files (${documents.length})` },
-    { value: "approvals", label: "Approvals" },
-    // Keep finance preparation with admins until the client rollout is ready.
-    ...(me?.isAdmin ? [{ value: "payments", label: "Payments" }] : []),
-    { value: "details", label: "Details" },
-    ...(me?.isAdmin ? [{ value: "team", label: "Team" }] : []),
-  ];
+  const allowedSections = ["daily", "overview", "table", "updates", "files", "approvals", "details", ...(canEdit ? ["board", "timeline"] : []), ...(me?.isAdmin ? ["payments", "team"] : [])];
+  const defaultSection = canEdit ? "table" : "daily";
+  const activeTab = selectedSection?.projectId === id && allowedSections.includes(selectedSection.value) ? selectedSection.value : defaultSection;
+  const setActiveTab = (value: string) => setSelectedSection({ projectId: id, value });
+  const openTaskPanel = (task: Task, section?: "comments" | "files") => { setOpenId(task.id); setOpenSection(section); };
 
   async function refreshProject() {
     if (refreshing) return;
@@ -97,27 +90,26 @@ function ProjectPage() {
   }
 
   return (
-    <div className="mx-auto min-w-0 max-w-7xl px-4 py-5 sm:px-6 sm:py-8">
+    <div className="mx-auto min-w-0 max-w-[1600px] px-4 py-4 sm:px-6 sm:py-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Link to="/dashboard" className="inline-flex min-h-11 items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="h-4 w-4" /> All projects</Link>
         <Button variant="outline" size="sm" aria-label="Refresh project" disabled={refreshing} onClick={() => void refreshProject()}><RefreshCw className="h-4 w-4" />{refreshing ? "Refreshing…" : "Refresh"}</Button>
       </div>
       {error && <p role="alert" className="mt-3 text-sm text-destructive">The latest project information could not be loaded. Showing the last loaded details; use Refresh to try again.</p>}
-      <div className="mt-4 flex flex-wrap items-end justify-between gap-6">
+      <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0 max-w-full">
-          {projectContext && <p className="eyebrow [overflow-wrap:anywhere]">{projectContext}</p>}
-          <h1 className="mt-1 text-3xl [overflow-wrap:anywhere] sm:text-4xl">{project.name}</h1>
+          <h1 className="text-2xl [overflow-wrap:anywhere] sm:text-3xl">{project.name}</h1>
           <p className="mt-2 flex flex-wrap gap-4 text-sm text-muted-foreground">
+            {projectContext && <span className="[overflow-wrap:anywhere]">{projectContext}</span>}
             {project.location && <span className="flex min-w-0 items-start gap-1 [overflow-wrap:anywhere]"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />{project.location}</span>}
             {project.target_date && <span>Handover {format(parseISO(project.target_date), "d MMM yyyy")}</span>}
-            {canEdit && <span>You can edit</span>}
             {!canEdit && <span>{stageLabel(project.current_stage)} · {pct}% of tasks complete</span>}
           </p>
         </div>
-        {canEdit ? <div className="w-full max-w-sm space-y-2">
+        {canEdit ? <div className="w-full max-w-xs space-y-2">
           <div className="flex min-w-0 items-center justify-between gap-3 text-sm">
             <Select disabled={stageBusy} value={project.current_stage} onValueChange={(value) => void setStage(value)}>
-              <SelectTrigger className="min-w-0 flex-1"><SelectValue /></SelectTrigger>
+              <SelectTrigger aria-label="Project stage" className="min-h-11 min-w-0 flex-1"><SelectValue /></SelectTrigger>
               <SelectContent>{STAGES.map((s) => <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>)}</SelectContent>
             </Select>
             <span className="shrink-0 font-display text-2xl">{pct}%</span>
@@ -127,54 +119,22 @@ function ProjectPage() {
         </div> : meetingUrl && <Button asChild variant="outline" size="sm"><a href={meetingUrl} target="_blank" rel="noopener noreferrer"><CalendarDays className="h-4 w-4" /> Schedule a meeting</a></Button>}
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-8">
-        <div className="sm:hidden">
-          <label htmlFor={`project-section-${id}`} className="sr-only">Project section</label>
-          <select id={`project-section-${id}`} className="h-11 w-full min-w-0 rounded-md border bg-background px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={activeTab} onChange={(event) => setActiveTab(event.target.value)}>
-            {sections.map((section) => <option key={section.value} value={section.value}>{section.label}</option>)}
-          </select>
+      <div className="mt-5">
+        <ProjectNavigation value={activeTab} canEdit={canEdit} isAdmin={!!me?.isAdmin} onChange={setActiveTab} />
+        <div className="mt-4">
+          {activeTab === "daily" && <DailyStatus key={id} projectId={id} tasks={tasks} documents={documents} canEdit={canEdit} onOpenTask={openTaskPanel} onOpenFiles={() => setActiveTab("files")} onOpenUpdates={() => setActiveTab("updates")} />}
+          {activeTab === "overview" && <ProjectOverview project={project} tasks={tasks} documents={documents} onOpenTask={openTaskPanel} onOpenFiles={() => setActiveTab("files")} onOpenUpdates={() => setActiveTab("updates")} />}
+          {activeTab === "table" && <TableView key={id} tasks={tasks} documents={documents} defaultStage={project.current_stage} people={people} canEdit={canEdit} onOpen={openTaskPanel} onUpdate={m.update} onAdd={m.add} />}
+          {activeTab === "board" && canEdit && <BoardView tasks={tasks} people={people} canEdit={canEdit} onOpen={openTaskPanel} onUpdate={m.update} />}
+          {activeTab === "timeline" && canEdit && <TimelineView tasks={tasks} onOpen={openTaskPanel} />}
+          {activeTab === "files" && <FilesTab projectId={id} canEdit={canEdit} documents={documents} tasks={tasks} onChange={refetch} />}
+          {activeTab === "updates" && <ProjectUpdates projectId={id} canEdit={canEdit} />}
+          {activeTab === "approvals" && <ApprovalOverview projectId={id} tasks={tasks} onOpen={openTaskPanel} />}
+          {activeTab === "payments" && me?.isAdmin && <ProjectPayments key={id} projectId={id} />}
+          {activeTab === "details" && <ProjectDetails key={id} project={project} canEdit={canEdit} onChange={m.refresh} />}
+          {activeTab === "team" && me?.isAdmin && <TeamTab projectId={id} members={members} onChange={refetch} />}
         </div>
-        <TabsList aria-label="Project sections" className="hidden h-auto w-full gap-1 sm:flex sm:flex-wrap sm:justify-start [&>button]:min-h-11 [&>button]:whitespace-normal">
-          {sections.map((section) => <TabsTrigger key={section.value} value={section.value}>{section.label}</TabsTrigger>)}
-        </TabsList>
-        <TabsContent value="daily" className="mt-6">
-          <DailyStatus key={id} projectId={id} tasks={tasks} documents={documents} canEdit={canEdit} onOpenTask={(task) => setOpenId(task.id)} onOpenFiles={() => setActiveTab("files")} onOpenUpdates={() => setActiveTab("updates")} />
-        </TabsContent>
-        <TabsContent value="overview" className="mt-6">
-          <ProjectOverview project={project} tasks={tasks} documents={documents} onOpenTask={(task) => setOpenId(task.id)} onOpenFiles={() => setActiveTab("files")} onOpenUpdates={() => setActiveTab("updates")} />
-        </TabsContent>
-        <TabsContent value="table" className="mt-6">
-          <TableView tasks={tasks} people={people} canEdit={canEdit} onOpen={(t) => setOpenId(t.id)} onUpdate={m.update} onAdd={m.add} />
-        </TabsContent>
-        <TabsContent value="board" className="mt-6">
-          <BoardView tasks={tasks} people={people} canEdit={canEdit} onOpen={(t) => setOpenId(t.id)} onUpdate={m.update} />
-        </TabsContent>
-        <TabsContent value="timeline" className="mt-6">
-          <TimelineView tasks={tasks} onOpen={(t: Task) => setOpenId(t.id)} />
-        </TabsContent>
-        <TabsContent value="files" className="mt-6">
-          <FilesTab projectId={id} canEdit={canEdit} documents={documents} tasks={tasks} onChange={refetch} />
-        </TabsContent>
-        <TabsContent value="updates" className="mt-6">
-          <ProjectUpdates projectId={id} canEdit={canEdit} />
-        </TabsContent>
-        <TabsContent value="approvals" className="mt-6">
-          <ApprovalOverview projectId={id} tasks={tasks} onOpen={(task) => setOpenId(task.id)} />
-        </TabsContent>
-        {me?.isAdmin && (
-          <TabsContent value="payments" className="mt-6">
-            <ProjectPayments key={id} projectId={id} />
-          </TabsContent>
-        )}
-        <TabsContent value="details" className="mt-6">
-          <ProjectDetails key={id} project={project} canEdit={canEdit} onChange={m.refresh} />
-        </TabsContent>
-        {me?.isAdmin && (
-          <TabsContent value="team" className="mt-6">
-            <TeamTab projectId={id} members={members} onChange={refetch} />
-          </TabsContent>
-        )}
-      </Tabs>
+      </div>
 
       <TaskSheet
         task={openTask}
@@ -184,7 +144,8 @@ function ProjectPage() {
         currentUserId={me?.id ?? null}
         people={people}
         docs={documents}
-        onClose={() => setOpenId(null)}
+        initialSection={openSection}
+        onClose={() => { setOpenId(null); setOpenSection(undefined); }}
         onUpdate={m.update}
         onDelete={m.remove}
       />

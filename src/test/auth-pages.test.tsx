@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   signIn: vi.fn(), requestReset: vi.fn(), updateUser: vi.fn(), readUser: vi.fn(), getSession: vi.fn(), signOut: vi.fn(), navigate: vi.fn(),
-  search: {} as { mode?: "forgot" },
+  search: {} as { mode?: "forgot"; returnTo?: string },
 }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: { auth: { signInWithPassword: mocks.signIn, resetPasswordForEmail: mocks.requestReset, updateUser: mocks.updateUser, getSession: mocks.getSession, signOut: mocks.signOut } } }));
 vi.mock("@/lib/session", () => ({
@@ -32,7 +32,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocks.search = {};
   refreshAuth = undefined;
-  mocks.navigate.mockImplementation(async (options: { to: string; search?: { mode?: "forgot" } }) => {
+  mocks.navigate.mockImplementation(async (options: { to: string; search?: { mode?: "forgot"; returnTo?: string } }) => {
     if (options.to === "/auth") { mocks.search = options.search ?? {}; refreshAuth?.(); }
   });
   mocks.readUser.mockResolvedValue({ id: "client-a", email: "client@example.test" });
@@ -68,6 +68,14 @@ function deferred<T>() {
 }
 
 describe("Returning visitor sessions", () => {
+  it("opens the shared project after verifying a saved sign-in", async () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    mocks.search = { returnTo: `/projects/${id}` };
+    mocks.getSession.mockResolvedValue(savedSessionHint);
+    renderAuth();
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith({ to: "/projects/$id", params: { id }, replace: true }));
+  });
+
   it.each(["home", "auth"])("keeps a fresh %s immediately usable without a user verification request", async (page) => {
     if (page === "home") {
       render(<IndexPage />);
@@ -173,6 +181,44 @@ describe("Returning visitor sessions", () => {
 });
 
 describe("Sign-in and reset-link forms", () => {
+  it("returns a new sign-in to its project instead of the project list", async () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    mocks.search = { returnTo: `/projects/${id}` };
+    renderAuth();
+    fireEvent.submit(fillSignIn());
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith({ to: "/projects/$id", params: { id } }));
+  });
+
+  it("falls back to projects when a return target is not a canonical portal path", async () => {
+    mocks.search = { returnTo: "//example.test/steal" };
+    renderAuth();
+    fireEvent.submit(fillSignIn());
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith({ to: "/dashboard" }));
+  });
+
+  it("retains the project destination across forgot-password and back navigation", async () => {
+    const returnTo = "/projects/11111111-1111-4111-8111-111111111111";
+    mocks.search = { returnTo };
+    renderAuth();
+    fireEvent.click(screen.getByRole("button", { name: "Forgot password?" }));
+    await screen.findByRole("heading", { name: "Reset password" });
+    expect(mocks.navigate).toHaveBeenLastCalledWith({ to: "/auth", search: { mode: "forgot", returnTo }, replace: true });
+    fireEvent.click(screen.getByRole("button", { name: "Back to sign in" }));
+    await screen.findByRole("heading", { name: "Welcome back" });
+    expect(mocks.navigate).toHaveBeenLastCalledWith({ to: "/auth", search: { returnTo }, replace: true });
+  });
+
+  it("keeps the project destination after requesting a password reset", async () => {
+    const returnTo = "/projects/11111111-1111-4111-8111-111111111111";
+    mocks.search = { mode: "forgot", returnTo };
+    renderAuth();
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "client@example.test" } });
+    fireEvent.submit(screen.getByRole("button", { name: "Send reset link" }).closest("form")!);
+    await screen.findByRole("heading", { name: "Welcome back" });
+    expect(mocks.navigate).toHaveBeenLastCalledWith({ to: "/auth", search: { returnTo }, replace: true });
+    expect(mocks.requestReset).toHaveBeenCalledWith("client@example.test", { redirectTo: `${window.location.origin}/reset-password` });
+  });
+
   it("shows pending feedback, blocks repeated submits and preserves an actionable sign-in error", async () => {
     let finish!: (value: { error: { message: string } }) => void;
     mocks.signIn.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
