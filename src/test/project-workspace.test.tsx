@@ -15,11 +15,15 @@ vi.mock("@/components/project/data", () => ({
     tasks: [{ id: "task-a", title: "Sample task", status: "not_started" }], documents: [],
     members: [{ user_id: "viewer", access: mocks.access }],
     people: [{ id: "global-admin", full_name: "Sample admin", email: "admin@example.test" }],
+    stages: [
+      { key: "planning", label: "Brief & Plan", position: 0, archived_at: null },
+      { key: "retired", label: "Retired stage", position: 1, archived_at: "2026-11-25T00:00:00Z" },
+    ],
   }, refetch: vi.fn() }),
   useTaskMutations: () => ({ update: vi.fn(), add: vi.fn(), remove: vi.fn(), refresh: vi.fn() }),
 }));
 vi.mock("@/components/project/Views", () => ({
-  TableView: ({ canEdit, onOpen, tasks, people }: { canEdit: boolean; onOpen: (task: unknown, section?: string) => void; tasks: unknown[]; people: unknown[] }) => { mocks.table({ people }); return <div>
+  TableView: ({ canEdit, onOpen, tasks, people, stages, stageCatalog, headingManagement }: { canEdit: boolean; onOpen: (task: unknown, section?: string) => void; tasks: unknown[]; people: unknown[]; stages?: unknown[]; stageCatalog?: unknown[]; headingManagement?: unknown }) => { mocks.table({ people, stages, stageCatalog, headingManagement }); return <div>
     <p>{canEdit ? "Editable task sheet" : "Read-only task sheet"}</p>
     <button onClick={() => onOpen(tasks[0], "comments")}>Row comments</button>
     <button onClick={() => onOpen(tasks[0], "files")}>Row files</button>
@@ -117,5 +121,21 @@ describe("Simple project workspace", () => {
     expect(mocks.sheet.mock.lastCall?.[0]).toMatchObject({ initialSection: "files" });
     fireEvent.click(screen.getByRole("button", { name: "Open row" }));
     expect(mocks.sheet.mock.lastCall?.[0].initialSection).toBeUndefined();
+  });
+
+  it("exposes heading management and project duplication only to admins while filtering archived stages", () => {
+    mocks.admin = true;
+    const view = renderProject();
+    expect(mocks.table.mock.lastCall?.[0].stages).toEqual([{ key: "planning", label: "Brief & Plan", position: 0, archived_at: null }]);
+    expect(mocks.table.mock.lastCall?.[0].stageCatalog).toHaveLength(2);
+    expect(mocks.table.mock.lastCall?.[0].headingManagement).toMatchObject({ projectId: "project-a", actorId: "viewer" });
+    openMore();
+    expect(screen.getByRole("menuitem", { name: "Duplicate project" })).toBeInTheDocument();
+
+    mocks.admin = false;
+    mocks.access = "partner";
+    view.rerender(<QueryClientProvider client={clients[0]!}><ProjectPage /></QueryClientProvider>);
+    expect(mocks.table.mock.lastCall?.[0].headingManagement).toBeUndefined();
+    expect(screen.queryByRole("menuitem", { name: "Duplicate project" })).not.toBeInTheDocument();
   });
 });

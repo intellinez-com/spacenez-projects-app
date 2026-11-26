@@ -9,9 +9,10 @@ type Props = {
   canEdit: boolean;
   isAdmin: boolean;
   onChange: (value: string) => void;
+  onDuplicate?: () => void;
 };
 
-export function ProjectNavigation({ value, canEdit, isAdmin, onChange }: Props) {
+export function ProjectNavigation({ value, canEdit, isAdmin, onChange, onDuplicate }: Props) {
   const tasks = { value: "table", label: "Tasks" };
   const progress = { value: "daily", label: "Progress" };
   const primary: Section[] = [
@@ -41,6 +42,7 @@ export function ProjectNavigation({ value, canEdit, isAdmin, onChange }: Props) 
       <DropdownMenu>
         <DropdownMenuTrigger asChild><Button variant="ghost" className={cn("min-h-11 shrink-0 px-2 sm:px-3", selectedSecondary && "bg-muted")} aria-label="More project options">More <ChevronDown aria-hidden="true" className="h-4 w-4" /></Button></DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56 max-w-[calc(100vw-2rem)]">
+          {isAdmin && onDuplicate && <><DropdownMenuItem className="min-h-11" onSelect={onDuplicate}>Duplicate project</DropdownMenuItem><DropdownMenuSeparator /></>}
           {secondary.map(menuItem)}
           {alternateViews.length > 0 && <><DropdownMenuSeparator /><DropdownMenuLabel>Other task views</DropdownMenuLabel>{alternateViews.map(menuItem)}</>}
         </DropdownMenuContent>

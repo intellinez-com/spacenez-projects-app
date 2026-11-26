@@ -1,10 +1,12 @@
 import type { Database } from "@/integrations/supabase/types";
+import { STAGES } from "@/lib/constants";
 
 type Row<Table extends keyof Database["public"]["Tables"]> = Database["public"]["Tables"][Table]["Row"];
 export const previewIds = {
   project: "11111111-1111-4111-8111-111111111111",
   client: "22222222-2222-4222-8222-222222222222",
   designer: "33333333-3333-4333-8333-333333333333",
+  admin: "abababab-abab-4bab-8bab-abababababab",
   reviewTask: "44444444-4444-4444-8444-444444444443",
 };
 
@@ -17,17 +19,19 @@ function day(offset: number) {
 }
 function timestamp(offset: number, hour = 9) { return `${day(offset)}T${String(hour).padStart(2, "0")}:00:00.000Z`; }
 
-export function createPreviewFixtures() {
+export function createPreviewFixtures(role: "client" | "admin" = "client") {
   const profiles: Row<"profiles">[] = [
     { id: previewIds.client, full_name: "Sample Client", email: "client@example.test", company: "Sample Client Brand", created_at: timestamp(-20) },
     { id: previewIds.designer, full_name: "Sample Designer", email: "designer@example.test", company: "Sample Design Team", created_at: timestamp(-20) },
   ];
-  const projects: Row<"projects">[] = [{
+  if (role === "admin") profiles.push({ id: previewIds.admin, full_name: "Sample Admin", email: "admin@example.test", company: "Sample Design Team", created_at: timestamp(-20) });
+  const projects: (Row<"projects"> & { stage_revision: number })[] = [{
     id: previewIds.project, name: "Sample interior project", client_name: "Sample Client", client_brand: "Sample Client Brand", client_email: "client@example.test",
-    location: "Sample site", project_type: "Apartment", current_stage: "layout_2d", status: "active", start_date: day(-14), target_date: day(45),
+    location: "Sample site", project_type: "Apartment", current_stage: "layout_2d", stage_revision: 0, status: "active", start_date: day(-14), target_date: day(45),
     description: "Sample project for reviewing the client experience. These dates, progress updates and files are fictional.", meeting_url: null,
     created_at: timestamp(-20), created_by: previewIds.designer,
   }];
+  const project_stages = STAGES.map((stage, position) => ({ project_id: previewIds.project, key: stage.key as string, label: stage.label as string, position, archived_at: null as string | null }));
   const taskInputs = [
     ["Project brief and requirements", "planning", "done", -14, -12],
     ["Site measurements", "site_survey", "done", -12, -10],
@@ -83,5 +87,5 @@ export function createPreviewFixtures() {
     { id: "cccccccc-cccc-4ccc-8ccc-ccccccccccc5", project_id: previewIds.project, actor_id: previewIds.designer, kind: "task_updated", occurred_at: timestamp(-9), source_type: "tasks", source_id: survey.id, task_id: survey.id, payload: { title: survey.title, status: "in_progress", stage: survey.stage, changes: { status: { from: "not_started", to: "in_progress" } } } },
   ];
   const project_activity_tracking: Row<"project_activity_tracking">[] = [{ id: true, started_at: timestamp(-20) }];
-  return { profiles, projects, tasks, project_members, documents, comments, project_daily_updates, project_activity, project_activity_tracking, task_approvals, task_approval_plan, user_roles: [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", user_id: previewIds.client, role: "client" }] };
+  return { profiles, projects, project_stages, tasks, project_members, documents, comments, project_daily_updates, project_activity, project_activity_tracking, task_approvals, task_approval_plan, user_roles: [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", user_id: role === "admin" ? previewIds.admin : previewIds.client, role: role === "admin" ? "admin" as const : "client" as const }] };
 }

@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TaskSheet } from "./TaskSheet";
 import type { Task } from "./data";
+import type { StageDefinition } from "@/lib/constants";
 
 const mocks = vi.hoisted(() => ({ from: vi.fn(), getUser: vi.fn(), insert: vi.fn() }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: { from: mocks.from, auth: { getUser: mocks.getUser } } }));
@@ -13,10 +14,10 @@ const task = {
   priority: "medium", content_revision: 1, assignee_id: null, start_date: null, due_date: null,
 } as Task;
 
-function show(overrides: { task?: Task; canEdit?: boolean; initialSection?: "comments" | "files"; onUpdate?: (id: string, patch: Partial<Task>) => Promise<void>; onDelete?: (id: string) => Promise<void>; onClose?: () => void } = {}) {
+function show(overrides: { task?: Task; canEdit?: boolean; initialSection?: "comments" | "files"; onUpdate?: (id: string, patch: Partial<Task>) => Promise<void>; onDelete?: (id: string) => Promise<void>; onClose?: () => void; stages?: readonly StageDefinition[]; stageCatalog?: readonly StageDefinition[] } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={client}>
-    <TaskSheet task={overrides.task ?? task} projectId="project" currentUserId="client" canEdit={overrides.canEdit ?? true} canApprove={false} people={[]} docs={[]} initialSection={overrides.initialSection} onClose={overrides.onClose ?? vi.fn()} onUpdate={overrides.onUpdate ?? vi.fn().mockResolvedValue(undefined)} onDelete={overrides.onDelete ?? vi.fn().mockResolvedValue(undefined)} />
+    <TaskSheet task={overrides.task ?? task} projectId="project" currentUserId="client" canEdit={overrides.canEdit ?? true} canApprove={false} people={[]} docs={[]} initialSection={overrides.initialSection} onClose={overrides.onClose ?? vi.fn()} onUpdate={overrides.onUpdate ?? vi.fn().mockResolvedValue(undefined)} onDelete={overrides.onDelete ?? vi.fn().mockResolvedValue(undefined)} {...(overrides.stages ? { stages: overrides.stages } : {})} {...(overrides.stageCatalog ? { stageCatalog: overrides.stageCatalog } : {})} />
   </QueryClientProvider>);
 }
 
@@ -98,6 +99,12 @@ describe("task row shortcuts", () => {
 });
 
 describe("task sheet failures", () => {
+  it("shows the project's custom heading label in the client's task details", () => {
+    show({ task: { ...task, stage: "custom_kitchen" }, canEdit: false, stages: [{ key: "custom_kitchen", label: "Kitchen installation" }] });
+    expect(screen.getByText("Kitchen installation")).toBeInTheDocument();
+    expect(screen.queryByText("custom_kitchen")).not.toBeInTheDocument();
+  });
+
   it("exposes the full read-only task content to clients without edit controls", () => {
     const title = "Detailed client layout review with materials and installation notes ".repeat(4).trim();
     const description = "Review the full design description and the detailed acceptance criteria before responding. ".repeat(6).trim();

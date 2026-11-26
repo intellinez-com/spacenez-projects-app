@@ -25,6 +25,13 @@ function date(value: unknown) {
   return isValid(parsed) ? format(parsed, "d MMM yyyy") : "Date unavailable";
 }
 
+/** Event-time labels remain unchanged when a live heading is renamed later. */
+function recordedStage(payload: Record<string, unknown>, key: string, side: "from" | "to", value: unknown) {
+  const labels = record(record(payload["stage_labels"])[key]);
+  const captured = text(labels[side]);
+  return captured || (side === "to" ? text(payload["stage_label"]) : "") || stageLabel(text(value, "Not set"));
+}
+
 /** A plain action, without the actor's name, shared by the home preview and timeline. */
 export function activityDescription(activity: ProjectActivity): string {
   const payload = activityPayload(activity);
@@ -38,12 +45,17 @@ export function activityDescription(activity: ProjectActivity): string {
     if (changes["status"]) return `marked ${title} as ${activityStatus(record(changes["status"])["to"])}`;
     if (changes["title"]) return `renamed ${text(record(changes["title"])["from"], "a task")} to ${text(record(changes["title"])["to"], title)}`;
     if (changes["due_date"] || changes["start_date"]) return `updated the dates for ${title}`;
-    if (changes["stage"]) return `moved ${title} to ${stageLabel(text(record(changes["stage"])["to"], "another stage"))}`;
+    if (changes["stage"]) return `moved ${title} to ${recordedStage(payload, "stage", "to", record(changes["stage"])["to"])}`;
     if (changes["assignee_id"]) return `changed the owner of ${title}`;
     return `updated ${title}`;
   }
   if (activity.kind === "project_updated") {
-    if (changes["current_stage"]) return `moved the project to ${stageLabel(text(record(changes["current_stage"])["to"], "another stage"))}`;
+    const heading = record(payload["heading_change"]);
+    if (heading["type"] === "added") return `added the heading ${text(heading["label"], "New heading")}`;
+    if (heading["type"] === "renamed") return `renamed the heading ${text(heading["previous_label"], "a heading")} to ${text(heading["label"], "a new name")}`;
+    if (heading["type"] === "removed") return `removed the heading ${text(heading["label"], "a heading")}`;
+    if (heading["type"] === "reordered") return "reordered the project headings";
+    if (changes["current_stage"]) return `moved the project to ${recordedStage(payload, "current_stage", "to", record(changes["current_stage"])["to"])}`;
     if (changes["status"]) return `changed the project status to ${activityStatus(record(changes["status"])["to"], true)}`;
     if (changes["start_date"] || changes["target_date"]) return "updated the project dates";
     return "updated the project details";
@@ -61,7 +73,8 @@ export function activityDescription(activity: ProjectActivity): string {
 
 /** Before/after values use names and dates; internal account IDs stay out of the client view. */
 export function activityChangeDetails(activity: ProjectActivity): string[] {
-  const changes = record(activityPayload(activity)["changes"]);
+  const payload = activityPayload(activity);
+  const changes = record(payload["changes"]);
   const project = activity.kind === "project_updated";
   const output: string[] = [];
   for (const [key, value] of Object.entries(changes)) {
@@ -71,7 +84,7 @@ export function activityChangeDetails(activity: ProjectActivity): string[] {
     else if (key === "due_date") output.push(`Due date: ${date(from)} → ${date(to)}`);
     else if (key === "start_date") output.push(`Start date: ${date(from)} → ${date(to)}`);
     else if (key === "target_date") output.push(`Target handover: ${date(from)} → ${date(to)}`);
-    else if (key === "stage" || key === "current_stage") output.push(`Stage: ${from ? stageLabel(text(from)) : "Not set"} → ${to ? stageLabel(text(to)) : "Not set"}`);
+    else if (key === "stage" || key === "current_stage") output.push(`Stage: ${from ? recordedStage(payload, key, "from", from) : "Not set"} → ${to ? recordedStage(payload, key, "to", to) : "Not set"}`);
     else if (key === "title" || key === "name") output.push(`Name: ${text(from, "Not set")} → ${text(to, "Not set")}`);
     else if (key === "priority") output.push(`Priority: ${text(from, "Not set")} → ${text(to, "Not set")}`);
     else if (key === "assignee_id") output.push("Task owner changed");

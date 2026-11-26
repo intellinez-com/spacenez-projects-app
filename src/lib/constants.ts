@@ -1,3 +1,6 @@
+export type StageDefinition = { key: string; label: string };
+
+/** Default template for new projects; each project's editable catalogue is stored in the database. */
 export const STAGES = [
   { key: "planning", label: "Planning & Brief" },
   { key: "site_survey", label: "Site Survey" },
@@ -28,9 +31,9 @@ export const PRIORITIES = [
 
 export const PROJECT_TYPES = ["Apartment", "Villa", "Office", "Retail", "Restaurant / Café", "Hospitality", "Other"];
 
-export const stageLabel = (k: string) => STAGES.find((s) => s.key === k)?.label ?? k;
+export const stageLabel = (k: string, stages: readonly StageDefinition[] = STAGES) => stages.find((s) => s.key === k)?.label ?? STAGES.find((s) => s.key === k)?.label ?? k;
 export const statusLabel = (k: string) => STATUSES.find((s) => s.key === k)?.label ?? k;
-export const stageIndex = (k: string) => Math.max(0, STAGES.findIndex((s) => s.key === k));
+export const stageIndex = (k: string, stages: readonly StageDefinition[] = STAGES) => Math.max(0, stages.findIndex((s) => s.key === k));
 
 /** Percent of tasks done; 0 when no tasks. */
 export function progressOf(tasks: { status: string }[]) {

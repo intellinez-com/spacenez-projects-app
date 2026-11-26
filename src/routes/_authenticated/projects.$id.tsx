@@ -22,6 +22,7 @@ import { ProjectUpdates } from "@/components/project/ProjectUpdates";
 import { DailyStatus } from "@/components/project/DailyStatus";
 import { ProjectPayments } from "@/components/project/ProjectPayments";
 import { ProjectNavigation } from "@/components/project/ProjectNavigation";
+import { DuplicateProjectDialog } from "@/components/project/DuplicateProjectDialog";
 import { useProject, useTaskMutations, uploadDoc, openDoc, fmtSize, type Task, type Profile, type Doc } from "@/components/project/data";
 
 export const Route = createFileRoute("/_authenticated/projects/$id")({
@@ -40,12 +41,15 @@ function ProjectPage() {
   const [stageBusy, setStageBusy] = useState(false);
   const [selectedSection, setSelectedSection] = useState<{ projectId: string; value: string } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [duplicateOpen, setDuplicateOpen] = useState(false);
 
   if (isLoading) return <p className="p-8 text-muted-foreground">Loading…</p>;
   if (error && !data?.project) return <div className="space-y-3 p-8"><p role="alert" className="text-destructive">Project data could not be loaded. {error.message}</p><Button onClick={() => void refetch()}>Retry</Button></div>;
   if (!data?.project) return <p className="p-8 text-muted-foreground">Project not found or you don't have access.</p>;
 
   const { project, tasks, members, documents, people } = data;
+  const stageCatalog = data.stages ?? STAGES;
+  const activeStages = stageCatalog.filter((stage) => !("archived_at" in stage) || stage.archived_at === null);
   const myAccess = members.find((x) => x.user_id === me?.id)?.access;
   const canEdit = !!me?.isAdmin || myAccess === "partner";
   const canApprove = myAccess === "client";
@@ -58,6 +62,12 @@ function ProjectPage() {
   const activeTab = selectedSection?.projectId === id && allowedSections.includes(selectedSection.value) ? selectedSection.value : defaultSection;
   const setActiveTab = (value: string) => setSelectedSection({ projectId: id, value });
   const openTaskPanel = (task: Task, section?: "comments" | "files") => { setOpenId(task.id); setOpenSection(section); };
+  const refreshHeadings = () => Promise.all([
+    qc.invalidateQueries({ queryKey: ["project", id] }, { throwOnError: true }),
+    qc.invalidateQueries({ queryKey: ["projects"] }),
+    qc.invalidateQueries({ queryKey: ["task-approvals", id] }),
+    qc.invalidateQueries({ queryKey: ["project-activity"] }),
+  ]);
 
   async function refreshProject() {
     if (refreshing) return;
@@ -102,30 +112,30 @@ function ProjectPage() {
             {projectContext && <span className="[overflow-wrap:anywhere]">{projectContext}</span>}
             {project.location && <span className="flex min-w-0 items-start gap-1 [overflow-wrap:anywhere]"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />{project.location}</span>}
             {project.target_date && <span>Handover {format(parseISO(project.target_date), "d MMM yyyy")}</span>}
-            {!canEdit && <span>{stageLabel(project.current_stage)} · {pct}% of tasks complete</span>}
+            {!canEdit && <span>{stageLabel(project.current_stage, stageCatalog)} · {pct}% of tasks complete</span>}
           </p>
         </div>
         {canEdit ? <div className="w-full max-w-xs space-y-2">
           <div className="flex min-w-0 items-center justify-between gap-3 text-sm">
             <Select disabled={stageBusy} value={project.current_stage} onValueChange={(value) => void setStage(value)}>
               <SelectTrigger aria-label="Project stage" className="min-h-11 min-w-0 flex-1"><SelectValue /></SelectTrigger>
-              <SelectContent>{STAGES.map((s) => <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>)}</SelectContent>
+              <SelectContent>{activeStages.map((s) => <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>)}</SelectContent>
             </Select>
             <span className="shrink-0 font-display text-2xl">{pct}%</span>
           </div>
-          <StageTrack current={stageIndex(project.current_stage)} />
+          <StageTrack current={stageIndex(project.current_stage, activeStages)} stages={activeStages} />
           {meetingUrl && <Button asChild variant="outline" size="sm"><a href={meetingUrl} target="_blank" rel="noopener noreferrer"><CalendarDays className="h-4 w-4" /> Schedule a meeting</a></Button>}
         </div> : meetingUrl && <Button asChild variant="outline" size="sm"><a href={meetingUrl} target="_blank" rel="noopener noreferrer"><CalendarDays className="h-4 w-4" /> Schedule a meeting</a></Button>}
       </div>
 
       <div className="mt-5">
-        <ProjectNavigation value={activeTab} canEdit={canEdit} isAdmin={!!me?.isAdmin} onChange={setActiveTab} />
+        <ProjectNavigation value={activeTab} canEdit={canEdit} isAdmin={!!me?.isAdmin} onChange={setActiveTab} {...(me?.isAdmin ? { onDuplicate: () => setDuplicateOpen(true) } : {})} />
         <div className="mt-4">
           {activeTab === "daily" && <DailyStatus key={id} projectId={id} tasks={tasks} documents={documents} canEdit={canEdit} onOpenTask={openTaskPanel} onOpenFiles={() => setActiveTab("files")} onOpenUpdates={() => setActiveTab("updates")} />}
-          {activeTab === "overview" && <ProjectOverview project={project} tasks={tasks} documents={documents} onOpenTask={openTaskPanel} onOpenFiles={() => setActiveTab("files")} onOpenUpdates={() => setActiveTab("updates")} />}
-          {activeTab === "table" && <TableView key={id} tasks={tasks} documents={documents} defaultStage={project.current_stage} people={people} canEdit={canEdit} onOpen={openTaskPanel} onUpdate={m.update} onAdd={m.add} />}
-          {activeTab === "board" && canEdit && <BoardView tasks={tasks} people={people} canEdit={canEdit} onOpen={openTaskPanel} onUpdate={m.update} />}
-          {activeTab === "timeline" && canEdit && <TimelineView tasks={tasks} onOpen={openTaskPanel} />}
+          {activeTab === "overview" && <ProjectOverview project={project} tasks={tasks} documents={documents} stages={stageCatalog} onOpenTask={openTaskPanel} onOpenFiles={() => setActiveTab("files")} onOpenUpdates={() => setActiveTab("updates")} />}
+          {activeTab === "table" && <TableView key={id} tasks={tasks} documents={documents} defaultStage={project.current_stage} people={people} canEdit={canEdit} stages={activeStages} stageCatalog={stageCatalog} onOpen={openTaskPanel} onUpdate={m.update} onAdd={m.add} {...(me?.isAdmin ? { headingManagement: { projectId: id, actorId: me.id, version: project.stage_revision ?? 0, currentStage: project.current_stage, onReload: refreshHeadings } } : {})} />}
+          {activeTab === "board" && canEdit && <BoardView tasks={tasks} people={people} canEdit={canEdit} stages={activeStages} stageCatalog={stageCatalog} onOpen={openTaskPanel} onUpdate={m.update} />}
+          {activeTab === "timeline" && canEdit && <TimelineView tasks={tasks} stages={activeStages} stageCatalog={stageCatalog} onOpen={openTaskPanel} />}
           {activeTab === "files" && <FilesTab projectId={id} canEdit={canEdit} documents={documents} tasks={tasks} onChange={refetch} />}
           {activeTab === "updates" && <ProjectUpdates projectId={id} canEdit={canEdit} />}
           {activeTab === "approvals" && <ApprovalOverview projectId={id} tasks={tasks} onOpen={openTaskPanel} />}
@@ -142,12 +152,15 @@ function ProjectPage() {
         canApprove={canApprove}
         currentUserId={me?.id ?? null}
         people={people}
+        stages={activeStages}
+        stageCatalog={stageCatalog}
         docs={documents}
         initialSection={openSection}
         onClose={() => { setOpenId(null); setOpenSection(undefined); }}
         onUpdate={m.update}
         onDelete={m.remove}
       />
+      {me?.isAdmin && <DuplicateProjectDialog source={project} actorId={me.id} open={duplicateOpen} onOpenChange={setDuplicateOpen} onCreated={() => { void qc.invalidateQueries({ queryKey: ["projects"] }); }} />}
     </div>
   );
 }

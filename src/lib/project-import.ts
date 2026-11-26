@@ -57,7 +57,7 @@ export const projectImportSchema = z.object({
   prerequisites: z.array(text).max(100),
   defaults: z.object({ priority: text, assignee_id: text }).strict(),
   metadata_provenance: z.object({ source: text, client_brand: text, project_name: text, client_name: text, project_manager: text, kickoff_date: text, task_owners: text }).strict(),
-  proposed_client_profile: z.object({ full_name: nullableText, email: z.string().email(), company: nullableText, requested_project_access: z.literal("client"), profile_id: z.null(), state: text }).strict(),
+  proposed_client_profile: z.object({ full_name: nullableText, email: z.string().email().nullable(), company: nullableText, requested_project_access: z.literal("client"), profile_id: z.null(), state: text }).strict(),
 }).strict().superRefine((plan, ctx) => {
   const ids = new Set<string>();
   const coordinates = new Set<string>();

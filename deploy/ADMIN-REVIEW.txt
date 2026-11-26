@@ -1,0 +1,97 @@
+Local admin review — 2026-11-25
+
+No changes from this review branch are deployed. Production client/partner Payments
+remains hidden; the owner must explicitly request launch before it is re-enabled.
+
+Run npm run dev:client and open:
+http://127.0.0.1:4173/dashboard?previewRole=admin
+The preview uses a fictional account and a closed in-memory transport. It cannot
+write to Supabase, send invitations or take payment. Refresh resets sample changes.
+
+Task sheet walkthrough
+1. Open the sample project. Admins/partners start on Tasks; clients start on Progress.
+2. Add task is at the top. Enter a task name and choose a stage, including stages
+   with no tasks yet. Enter or Add task saves it. Failed saves retain the draft.
+3. Change status, owner (including global admins as well as project members), priority
+   and start/due dates directly in the task row. Use the task-name edit action to rename it.
+   The local sample keeps changes in memory only.
+4. Manage project headings (admins only):
+   - Add heading creates a new custom heading and reveals it immediately.
+   - Drag the grip handle on desktop (or use Heading options -> Move up / Move down on
+     any screen size) to reorder headings.
+   - Heading options -> Rename heading renames a heading while keeping earlier activity
+     and approval snapshots intact.
+   - Heading options -> Remove heading archives a heading; if it has tasks or is the
+     current project stage, you must explicitly choose a destination heading first.
+5. Duplicate an existing project (admins only):
+   - Click Duplicate project on a dashboard card or under More -> Duplicate project
+     inside a project.
+   - Enter the new project name (and optional client/location/notes) and click Create copy.
+   - Active headings, tasks (reset to Not started, unassigned, blank dates) and planned
+     reviews are copied into the new project. Client access, files, comments, approvals
+     and payments stay with the original project.
+   - Open the new project to add, edit or delete tasks and headings independently.
+   - Production requires applying migrations 20261125140327_project_task_people.sql,
+     20261125142431_project_stages.sql and 20261125142617_duplicate_project.sql.
+6. Row Comments and Files open that part of the task panel directly. The panel
+   retains task description, approval workflow, attachment handling and comments.
+7. Search/filter tasks or collapse a stage to focus the sheet. Laptop/tablet rows
+   scroll within the sheet; phone rows stay compact and expose fields on demand.
+8. Main navigation is Tasks, Progress, Photos & files and Approvals. More contains
+   Duplicate project (admin), discussion, summary, project details, admin Team/Payments
+   and alternate views.
+9. Client Progress still shows automatic Today / This week / So far activity.
+   Client/partner Payments remains hidden pending the owner's launch instruction.
+
+Payment walkthrough (example figures, not RCF's agreement)
+1. Open the sample project > More > Payments > Set up payment plan.
+2. Enter an agreed total of 500000 rupees and an example agreement reference.
+3. Use the optional 30 / 25 / 25 / 20 schedule. This gives milestones of
+   150000, 125000, 125000 and 100000 rupees. Rename them and enter the actual due
+   conditions/dates when configuring a real agreement. Mark the first ready to
+   collect for this demo. Save the plan.
+4. Record received payment > Advance / token. Enter 50000 rupees, its date/method
+   and optionally a reference/proof. Allocate 50000 to the first milestone. Save.
+5. Confirmed paid is 50000, total remaining is 450000, and the first milestone
+   has 100000 due. The advance is counted once against the project total.
+6. In the preview banner, Payment demo > Review client payment screen > Pay online shows a local
+   checkout demonstration. It does not mark money paid or contact a provider.
+
+Online collection remains unconfigured. Dodo's published Merchant Acceptance Policy
+excludes custom design and in-person services; the Meratutor/Intellinez account is
+not assumed eligible for interior-project payments. Use a provider that approves
+this business, then add real checkout and verified, duplicate-safe payment updates.
+Policy checked 2026-11-21:
+https://docs.dodopayments.com/miscellaneous/merchant-acceptance
+
+Spreadsheet import walkthrough
+1. On Projects, Import project plan > Download spreadsheet template.
+2. Open the CSV in Excel, replace the example rows and save a CSV or .xlsx workbook.
+   Stage and Task are required. Optional columns include Task ID, Description,
+   Start date, Due date, Priority, Owner, Approval milestone/description and Notes.
+   Use ISO YYYY-MM-DD for text dates or real Excel date cells.
+3. Upload and review. Unknown stage names require choosing a standard portal stage.
+   Ambiguous dates stay blank with warnings. Owner text is preserved, with invited
+   users assigned later. This imports new plans, not completed work/sign-off history.
+4. Confirm project/client/location/type and review task/source notes. The local
+   preview disables final creation. Production creation still uses the existing
+   admin-only atomic import RPC; no new database migration is required.
+
+Spreadsheet imports map rows into the 11 built-in workflow headings in src/lib/constants.ts
+(which can then be renamed, reordered, extended or archived per project after creation).
+Normal New Project adds 20 starter tasks. An import adds only its source tasks. Unknown source
+stages must be mapped during import. Separate
+approval rows are linked only through explicit task IDs or an unambiguous source
+match. Other approval rows remain sourced notes with a warning; no relationship or
+client decision is invented.
+
+After an import RPC starts, its payload is held fixed for retries. Closing/reopening
+keeps that draft. A different import requires an explicit reset and checking Projects
+first; changing metadata after a lost response must not create a duplicate project.
+
+File safeguards
+- 5 MiB .xlsx/UTF-8 .csv, 20 sheets, 2000 rows per sheet, 64 columns, 500 tasks.
+- Reject encrypted/unsupported ZIP layouts, excessive expanded data, formulas in
+  imported fields and existing completion/approval history instead of guessing.
+- Preserve source hashes, sheet/row coordinates, preambles, unnamed columns and
+  original owner/date/notes content. Prepared support JSON remains backward compatible.

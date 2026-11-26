@@ -2,6 +2,7 @@
 import { PGlite } from "@electric-sql/pglite";
 import { readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
+import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { FinanceBundle } from "../lib/project-finance";
 
@@ -170,6 +171,120 @@ describe("project task people directory", () => {
       (select prosecdef from pg_proc where oid='public.get_project_task_people(uuid)'::regprocedure) as wrapper_is_definer,
       (select prosecdef from pg_proc where oid='portal_people_private.get_project_task_people(uuid)'::regprocedure) as helper_is_definer`));
     expect(grants).toEqual({ anonymous_execute: false, wrapper_is_definer: false, helper_is_definer: true });
+  });
+});
+
+describe("project heading structure", () => {
+  type Heading = { key: string; label: string; position: number; archived_at: string | null };
+  type HeadingResult = { version: number; stage_key?: string };
+  const list = async (actor = admin, projectId = project) => (await asActor<Heading>(actor,
+    "select key,label,position,archived_at from public.project_stages where project_id=$1 order by position,key", [projectId])).rows;
+  async function change(action: Record<string, unknown>, version = 0, requestId = randomUUID(), actor: string | null = admin, projectId = project) {
+    return firstRow(await asActor<{ result: HeadingResult }>(actor,
+      "select public.mutate_project_stages($1,$2,$3,$4::jsonb) as result", [projectId,version,requestId,JSON.stringify(action)])).result;
+  }
+
+  it("seeds new projects without fake heading activity and preserves legacy keys on explicit migration backfill", async () => {
+    const initial = await list(client);
+    expect(initial).toHaveLength(11);
+    expect(initial[0]).toMatchObject({ key: "planning", label: "Planning & Brief", position: 0, archived_at: null });
+    expect((await db.query("select id from public.project_activity where payload ? 'heading_change'")).rows).toEqual([]);
+    const newProject = "10000000-0000-0000-0000-000000000010";
+    await asActor(admin,"insert into public.projects(id,name) values ($1,'New seeded project')",[newProject]);
+    expect(await list(admin,newProject)).toHaveLength(11);
+    await db.exec("alter table public.tasks disable trigger validate_task_stage");
+    await db.query("insert into public.tasks(project_id,title,stage) values ($1,'Legacy imported work','Custom installation')",[project]);
+    await db.exec("alter table public.tasks enable trigger validate_task_stage");
+    await db.query("select portal_stages_private.seed_project_stages($1)",[project]);
+    expect((await list()).find((heading)=>heading.key==="Custom installation")).toMatchObject({ label:"Custom installation",archived_at:null });
+    expect(firstRow(await db.query<{ stage: string }>("select stage from public.tasks where title='Legacy imported work'")).stage).toBe("Custom installation");
+  });
+
+  it("adds custom headings once, retains exact retry results after later edits and rejects reused/stale requests", async () => {
+    const requestId = randomUUID(), action = {type:"add",label:"Site preparation"};
+    const added = await change(action,0,requestId);
+    expect(added).toMatchObject({version:1});
+    expect(added.stage_key).toMatch(/^custom_[0-9a-f]{32}$/);
+    await change({type:"rename",key:"site_survey",label:"Site visit"},1);
+    expect(await change(action,0,requestId)).toEqual(added);
+    expect((await list()).filter((heading)=>heading.label==="Site preparation")).toHaveLength(1);
+    expect((await db.query("select id from public.project_activity where payload ? 'heading_change'")).rows).toHaveLength(2);
+    await expect(change({type:"add",label:"Different request"},0,requestId)).rejects.toThrow("already used");
+    await expect(change({type:"add",label:"Stale edit"},0)).rejects.toThrow("Refresh and try again");
+    expect(firstRow(await db.query<{ stage_revision:number }>("select stage_revision from public.projects where id=$1",[project])).stage_revision).toBe(2);
+  });
+
+  it("renames only the project label and preserves event-time activity and approval labels", async () => {
+    const approval = await request();
+    const originalHistory = firstRow(await db.query<{payload:{stage_label:string}}>("select payload from public.project_activity where kind='task_created' and task_id=$1",[task])).payload;
+    expect(originalHistory.stage_label).toBe("Planning & Brief");
+    await change({type:"rename",key:"planning",label:"Client brief"});
+    expect(firstRow(await db.query<{stage:string;content_revision:number}>("select stage,content_revision from public.tasks where id=$1",[task]))).toEqual({stage:"planning",content_revision:1});
+    expect(firstRow(await db.query<{current_stage:string}>("select current_stage from public.projects where id=$1",[project])).current_stage).toBe("planning");
+    expect(firstRow(await db.query<{snapshot:{task:{stage_label:string}}}>("select snapshot from public.task_approvals where id=$1",[approval.id])).snapshot.task.stage_label).toBe("Planning & Brief");
+    expect(firstRow(await db.query<{payload:unknown}>("select payload from public.project_activity where kind='task_created' and task_id=$1",[task])).payload).toEqual(originalHistory);
+    await asActor(partner,"update public.tasks set status='in_progress' where id=$1",[task]);
+    expect(firstRow(await db.query<{label:string}>("select payload->>'stage_label' as label from public.project_activity where kind='task_updated' and task_id=$1",[task])).label).toBe("Client brief");
+    const event = firstRow(await asActor<{change:unknown}>(client,"select payload->'heading_change' as change from public.project_activity where payload ? 'heading_change'"));
+    expect(event.change).toMatchObject({type:"renamed",key:"planning",label:"Client brief",previous_label:"Planning & Brief"});
+  });
+
+  it("reorders all active headings without altering tasks, current stage or completion history", async () => {
+    const original = await list(), keys = [...original.map((heading)=>heading.key)].reverse();
+    await expect(change({type:"reorder",keys:keys.slice(1)})).rejects.toThrow("every active heading once");
+    await expect(change({type:"reorder",keys:keys.map(()=>"planning")})).rejects.toThrow("every active heading once");
+    expect(await list()).toEqual(original);
+    expect(await change({type:"reorder",keys})).toEqual({version:1});
+    const reordered = await list();
+    expect(reordered.map((heading)=>heading.key)).toEqual(keys);
+    expect(reordered.map((heading)=>heading.position)).toEqual(keys.map((_,index)=>index));
+    expect(firstRow(await db.query<{current_stage:string}>("select current_stage from public.projects where id=$1",[project])).current_stage).toBe("planning");
+    expect(firstRow(await db.query<{stage:string;status:string}>("select stage,status from public.tasks where id=$1",[task]))).toEqual({stage:"planning",status:"not_started"});
+    expect((await db.query("select id from public.project_activity where kind='task_updated'")).rows).toEqual([]);
+    expect(firstRow(await db.query<{event:{type:string;order:string[]}}>("select payload->'heading_change' as event from public.project_activity where payload ? 'heading_change'")).event).toEqual({type:"reordered",order:reordered.map((heading)=>heading.label)});
+  });
+
+  it("archives only after explicit task/current-stage moves and keeps approval revision guards active", async () => {
+    const approval = await request();
+    await expect(change({type:"archive",key:"planning"})).rejects.toThrow("Choose another active heading");
+    expect(firstRow(await db.query<{stage:string}>("select stage from public.tasks where id=$1",[task])).stage).toBe("planning");
+    expect(await change({type:"archive",key:"planning",move_to:"layout_2d"})).toEqual({version:1,stage_key:"planning"});
+    expect((await list(client)).find((heading)=>heading.key==="planning")?.archived_at).not.toBeNull();
+    expect(firstRow(await db.query<{stage:string;content_revision:number}>("select stage,content_revision from public.tasks where id=$1",[task]))).toEqual({stage:"layout_2d",content_revision:2});
+    expect(firstRow(await db.query<{current_stage:string}>("select current_stage from public.projects where id=$1",[project])).current_stage).toBe("layout_2d");
+    await expect(asActor(client,"select * from public.respond_task_approval($1,'approved',null)",[approval.id])).rejects.toThrow("task changed");
+    const activity = firstRow(await db.query<{labels:unknown}>("select payload->'stage_labels' as labels from public.project_activity where kind='task_updated' and task_id=$1",[task]));
+    expect(activity.labels).toEqual({stage:{from:"Planning & Brief",to:"2D Layout"}});
+    const projectActivity = firstRow(await db.query<{labels:unknown}>("select payload->'stage_labels' as labels from public.project_activity where source_type='projects' and payload ? 'changes'",[]));
+    expect(projectActivity.labels).toEqual({current_stage:{from:"Planning & Brief",to:"2D Layout"}});
+    await expect(asActor(partner,"update public.tasks set stage='planning' where id=$1",[task])).rejects.toThrow("active project heading");
+    await expect(asActor(admin,"update public.projects set current_stage='planning' where id=$1",[project])).rejects.toThrow("active project heading");
+  });
+
+  it("permits empty non-current archives, rejects duplicate/blank names and retains one active heading", async () => {
+    await expect(change({type:"add",label:" planning & brief "})).rejects.toThrow("already exists");
+    await expect(change({type:"rename",key:"site_survey",label:" planning & brief "})).rejects.toThrow("already exists");
+    await expect(change({type:"rename",key:"site_survey",label:"   "})).rejects.toThrow("1 to 120");
+    await expect(change({type:"add",label:"x".repeat(121)})).rejects.toThrow("1 to 120");
+    await change({type:"archive",key:"mood_boards"});
+    expect((await list()).find((heading)=>heading.key==="mood_boards")?.archived_at).not.toBeNull();
+    await db.query("delete from public.project_stages where project_id=$1 and key<>'planning'",[project]);
+    await expect(change({type:"archive",key:"planning",move_to:"missing"},1)).rejects.toThrow("at least one active");
+  });
+
+  it("keeps structure and version writes admin-RPC-only while partners may move tasks to active headings", async () => {
+    for(const actor of [partner,client,outsider,null]) await expect(change({type:"add",label:"Not allowed"},0,randomUUID(),actor)).rejects.toThrow();
+    for(const actor of [admin,partner,client]) {
+      await expect(asActor(actor,"insert into public.project_stages(project_id,key,label,position) values ($1,'bad','Raw heading',99)",[project])).rejects.toThrow();
+      await expect(asActor(actor,"update public.project_stages set label='Raw rename' where project_id=$1",[project])).rejects.toThrow();
+    }
+    for(const actor of [admin,partner]) await expect(asActor(actor,"update public.projects set stage_revision=99 where id=$1",[project])).rejects.toThrow("managed by");
+    await expect(asActor(admin,"insert into public.projects(name,stage_revision) values ('Bad version',99)")).rejects.toThrow("revision zero");
+    await expect(asActor(partner,"update public.tasks set stage='unknown' where id=$1",[task])).rejects.toThrow("active project heading");
+    await asActor(partner,"update public.tasks set stage='layout_2d' where id=$1",[task]);
+    expect((await asActor(outsider,"select key from public.project_stages where project_id=$1",[project])).rows).toEqual([]);
+    await expect(asActor(null,"select key from public.project_stages where project_id=$1",[project])).rejects.toThrow();
+    await expect(change({type:"add",label:"Unknown project"},0,randomUUID(),admin,"10000000-0000-0000-0000-000000000099")).rejects.toThrow("not found or access denied");
   });
 });
 

@@ -51,7 +51,7 @@ describe("isolated payment preview", () => {
           p_payment: { ...payload.p_payment, amount_minor: 300_000 },
         })
       ).status,
-    ).toBe(403);
+    ).toBe(409);
     expect((await call("save_project_finance", {})).status).toBe(403);
     expect((await call("get_project_finance", { p_project_id: "not-this-project" })).status).toBe(
       403,
@@ -93,6 +93,7 @@ describe("isolated payment preview", () => {
             purpose: "payment",
             amount_minor: 100,
             paid_on: current.payments[0].paid_on,
+            method: "Bank transfer",
             proof_path: path,
           },
           p_allocations: [],

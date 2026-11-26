@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { STAGES, statusLabel } from "@/lib/constants";
+import { STAGES, statusLabel, type StageDefinition } from "@/lib/constants";
 
 const dot: Record<string, string> = {
   not_started: "bg-status-not_started",
@@ -22,12 +22,13 @@ export function StatusPill({ status, className }: { status: string; className?: 
   );
 }
 
-export function StageTrack({ current }: { current: number }) {
+export function StageTrack({ current, stages = STAGES }: { current: number; stages?: readonly StageDefinition[] }) {
   return (
     <div className="flex gap-0.5">
-      {STAGES.map((_, i) => (
+      {stages.map((stage, i) => (
         <span
-          key={i}
+          key={stage.key}
+          title={stage.label}
           className={cn(
             "h-1.5 flex-1 rounded-full",
             i < current ? "bg-status-done" : i === current ? "bg-oak" : "bg-muted",

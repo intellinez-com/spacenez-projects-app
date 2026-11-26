@@ -15,6 +15,7 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { supabase } from "@/integrations/supabase/client";
 import { Toaster } from "@/components/ui/sonner";
 import { createAuthQueryCacheObserver } from "@/lib/auth-query-cache";
+import { LocalPreviewBanner } from "@/preview/LocalPreviewBanner";
 
 function NotFoundComponent() {
   return (
@@ -133,15 +134,7 @@ function RootComponent() {
 
   return (
     <QueryClientProvider key={authEpoch} client={queryClient}>
-      {import.meta.env.MODE === "client-preview" && <aside aria-label="Local preview information" className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm text-stone-900">
-        <span><strong>Local client preview.</strong> Fictional data; changes reset on refresh.</span>
-        <div className="flex flex-wrap items-center gap-4">
-          <a href="/dashboard" className="underline">Open client view</a>
-          <a href="/auth" className="underline">View sign-in</a>
-          <button type="button" className="underline" onClick={() => window.location.assign("/dashboard")}>Reset sample</button>
-          <details><summary className="cursor-pointer">Demo login</summary><p>client@example.test / preview-client</p></details>
-        </div>
-      </aside>}
+      {import.meta.env.MODE === "client-preview" && <LocalPreviewBanner />}
       <Outlet />
       <Toaster />
     </QueryClientProvider>
