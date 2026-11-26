@@ -1,8 +1,13 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ComponentProps } from "react";
-import { describe, expect, it, vi } from "vitest";
-import { TableView } from "./Views";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { BoardView, TableView, TimelineView } from "./Views";
 import type { Doc, Profile, Task } from "./data";
+
+const rpcMock = vi.hoisted(() => vi.fn());
+vi.mock("@/integrations/supabase/client", () => ({ supabase: { rpc: rpcMock } }));
+beforeEach(() => rpcMock.mockReset());
+afterEach(() => cleanup());
 
 const task = {
   id: "task-a", title: "Confirm the complete furniture layout and circulation space", stage: "planning",
@@ -138,7 +143,7 @@ describe("Project task sheet", () => {
     expect(screen.getByRole("region", { name: "Interior Design & Materials task sheet" })).toBeInTheDocument();
     fireEvent.change(screen.getByRole("textbox", { name: "Search tasks" }), { target: { value: "wrong title" } });
     fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Empty stages" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Empty headings" }));
     expect(screen.getByRole("region", { name: "Handover task sheet" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Add task to Handover" }));
     expect(addForm().getByRole("combobox", { name: "Stage" })).toHaveValue("handover");
@@ -153,5 +158,114 @@ describe("Project task sheet", () => {
     expect(collapse).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(collapse);
     expect(taskSheet().getByRole("textbox", { name: `Task name for ${task.title}` })).toHaveValue("Draft name");
+  });
+
+  it("uses project headings for task creation and grouping instead of the default stage list", async () => {
+    const stages = [{ key: "custom_kitchen", label: "Kitchen installation" }, { key: "custom_finish", label: "Finishing touches" }];
+    const onAdd = vi.fn().mockResolvedValue(undefined);
+    render(<TableView tasks={[{ ...task, stage: "custom_kitchen" }]} people={[person]} stages={stages} canEdit onOpen={vi.fn()} onUpdate={vi.fn()} onAdd={onAdd} />);
+    expect(screen.getByRole("region", { name: "Kitchen installation task sheet" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add heading" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add task" }));
+    const form = addForm();
+    expect(form.getByRole("combobox", { name: "Stage" }).querySelectorAll("option")).toHaveLength(2);
+    fireEvent.change(form.getByRole("textbox", { name: "Task name" }), { target: { value: "Inspect joinery" } });
+    fireEvent.change(form.getByRole("combobox", { name: "Stage" }), { target: { value: "custom_finish" } });
+    fireEvent.submit(screen.getByRole("form", { name: "Add a task" }));
+    await waitFor(() => expect(onAdd).toHaveBeenCalledWith("custom_finish", "Inspect joinery", 13));
+    expect(screen.getByRole("status")).toHaveTextContent("Task added to Finishing touches.");
+  });
+
+  it("shows custom heading labels on the board and timeline", () => {
+    const stages = [{ key: "custom_kitchen", label: "Kitchen installation" }];
+    const tasks = [{ ...task, stage: "custom_kitchen" }];
+    render(<><BoardView tasks={tasks} people={[person]} stages={stages} canEdit={false} onOpen={vi.fn()} onUpdate={vi.fn()} /><TimelineView tasks={tasks} stages={stages} onOpen={vi.fn()} /></>);
+    expect(within(screen.getByRole("region", { name: "Work board by status" })).getByText("Kitchen installation")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Work timeline" })).getByText("Kitchen installation")).toBeInTheDocument();
+  });
+
+  it("drags a heading to reorder, ignores self-drop, and moves visibly past hidden empty headings", async () => {
+    rpcMock.mockResolvedValue({ data: { version: 1 }, error: null });
+    const stages = [
+      { key: "planning", label: "Planning" },
+      { key: "empty_mid", label: "Empty middle" },
+      { key: "interior_design", label: "Materials" },
+    ];
+    const onReload = vi.fn().mockResolvedValue(undefined);
+    render(
+      <TableView
+        tasks={[task, otherTask]}
+        people={[person]}
+        stages={stages}
+        canEdit
+        onOpen={vi.fn()}
+        onUpdate={vi.fn()}
+        onAdd={vi.fn()}
+        headingManagement={{ projectId: "project-dnd", actorId: "admin-dnd", version: 0, currentStage: "planning", onReload }}
+      />,
+    );
+    const dragHandle = screen.getByRole("button", { name: /Drag Materials heading to reorder/ });
+    const planningHeader = screen.getByRole("button", { name: /Planning 0\/1 done/ }).parentElement!;
+    const materialsHeader = screen.getByRole("button", { name: /Materials 0\/1 done/ }).parentElement!;
+    const dataTransfer = { effectAllowed: "", dropEffect: "", setData: vi.fn(), getData: vi.fn() };
+    fireEvent.dragStart(dragHandle, { dataTransfer });
+    fireEvent.dragOver(materialsHeader, { dataTransfer });
+    fireEvent.drop(materialsHeader, { dataTransfer });
+    expect(rpcMock).not.toHaveBeenCalled();
+
+    fireEvent.dragStart(dragHandle, { dataTransfer });
+    fireEvent.dragOver(planningHeader, { dataTransfer });
+    fireEvent.drop(planningHeader, { dataTransfer });
+    await waitFor(() => expect(rpcMock).toHaveBeenCalledWith("mutate_project_stages", expect.objectContaining({
+      p_project_id: "project-dnd",
+      p_expected_version: 0,
+      p_action: { type: "reorder", keys: ["interior_design", "planning", "empty_mid"] },
+    })));
+    await waitFor(() => expect(onReload).toHaveBeenCalledTimes(1));
+
+    // When Empty headings is unchecked, Move up jumps directly past the hidden empty heading.
+    fireEvent.keyDown(screen.getByRole("button", { name: "Heading options for Materials" }), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Move up" }));
+    await waitFor(() => expect(rpcMock).toHaveBeenCalledTimes(2));
+    expect(rpcMock).toHaveBeenLastCalledWith("mutate_project_stages", expect.objectContaining({
+      p_action: { type: "reorder", keys: ["interior_design", "planning", "empty_mid"] },
+    }));
+  });
+
+  it("keeps multiple newly added empty headings visible and allows adding, renaming and removing headings", async () => {
+    const stages = [{ key: "planning", label: "Planning" }];
+    const onReload = vi.fn().mockResolvedValue(undefined);
+    rpcMock
+      .mockResolvedValueOnce({ data: { version: 1, stage_key: "custom_11111111111111111111111111111111" }, error: null })
+      .mockResolvedValueOnce({ data: { version: 2, stage_key: "custom_22222222222222222222222222222222" }, error: null });
+    const renderTable = (currentStages: typeof stages, version: number) => (
+      <TableView
+        tasks={[task]}
+        people={[person]}
+        stages={currentStages}
+        canEdit
+        onOpen={vi.fn()}
+        onUpdate={vi.fn()}
+        onAdd={vi.fn()}
+        headingManagement={{ projectId: "project-add", actorId: "admin-add", version, currentStage: "planning", onReload }}
+      />
+    );
+    const view = render(renderTable(stages, 0));
+    fireEvent.click(screen.getByRole("button", { name: "Add heading" }));
+    fireEvent.change(screen.getByLabelText("Heading name"), { target: { value: "Electrical" } });
+    fireEvent.submit(screen.getByRole("form", { name: "Add project heading" }));
+    await waitFor(() => expect(rpcMock).toHaveBeenCalledTimes(1));
+    const afterFirst = [...stages, { key: "custom_11111111111111111111111111111111", label: "Electrical" }];
+    view.rerender(renderTable(afterFirst, 1));
+    expect(screen.getByRole("button", { name: /Electrical 0\/0 done/ })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add heading" }));
+    fireEvent.change(screen.getByLabelText("Heading name"), { target: { value: "Plumbing" } });
+    fireEvent.submit(screen.getByRole("form", { name: "Add project heading" }));
+    await waitFor(() => expect(rpcMock).toHaveBeenCalledTimes(2));
+    const afterSecond = [...afterFirst, { key: "custom_22222222222222222222222222222222", label: "Plumbing" }];
+    view.rerender(renderTable(afterSecond, 2));
+    expect(screen.getByRole("button", { name: /Electrical 0\/0 done/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Plumbing 0\/0 done/ })).toBeInTheDocument();
   });
 });

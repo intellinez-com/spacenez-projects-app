@@ -44,11 +44,12 @@ function ApprovalSnapshot({ snapshot }: { snapshot: unknown }) {
   const docs = Array.isArray(rawDocuments) ? rawDocuments.map(snapshotObject) : [];
   const title = task["title"];
   const stage = task["stage"];
+  const stageAtRequest = task["stage_label"];
   const description = task["description"];
   return (
     <div className="mt-2 min-w-0 space-y-2 text-sm [overflow-wrap:anywhere]">
       <p className="font-medium">{typeof title === "string" ? title : "Task details unavailable"}</p>
-      {typeof stage === "string" && <p className="text-muted-foreground">{stageLabel(stage)}</p>}
+      {typeof stage === "string" && <p className="text-muted-foreground">{typeof stageAtRequest === "string" && stageAtRequest.trim() ? stageAtRequest : stageLabel(stage)}</p>}
       {typeof description === "string" && <p className="whitespace-pre-wrap leading-relaxed">{description}</p>}
       <p className="text-muted-foreground">Files submitted: {docs.length}</p>
       {docs.length > 0 && <ul className="space-y-1">

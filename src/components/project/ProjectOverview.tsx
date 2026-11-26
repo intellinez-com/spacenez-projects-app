@@ -3,7 +3,7 @@ import { format, isValid, parseISO } from "date-fns";
 import { FileText } from "lucide-react";
 import type { Database } from "@/integrations/supabase/types";
 import { supabase } from "@/integrations/supabase/client";
-import { progressOf, stageLabel, statusLabel } from "@/lib/constants";
+import { progressOf, stageLabel, statusLabel, STAGES, type StageDefinition } from "@/lib/constants";
 import { isTaskOverdue } from "@/lib/task-dates";
 import { Button } from "@/components/ui/button";
 import { type Task, type Doc, openDoc, fmtSize } from "./data";
@@ -12,6 +12,7 @@ import { RecentProjectUpdates } from "./ProjectUpdates";
 type ProjectRow = Database["public"]["Tables"]["projects"]["Row"];
 export type ProjectOverviewProps = {
   project: ProjectRow; tasks: Task[]; documents: Doc[];
+  stages?: readonly StageDefinition[];
   onOpenTask: (task: Task) => void; onOpenFiles: () => void; onOpenUpdates: () => void;
 };
 
@@ -21,7 +22,7 @@ export function displayProjectDate(value: string | null) {
   return isValid(date) ? format(date, "d MMM yyyy") : "Not set";
 }
 
-export function ProjectOverview({ project, tasks, documents, onOpenTask, onOpenFiles, onOpenUpdates }: ProjectOverviewProps) {
+export function ProjectOverview({ project, tasks, documents, stages = STAGES, onOpenTask, onOpenFiles, onOpenUpdates }: ProjectOverviewProps) {
   const projectTasks = tasks.filter((task) => task.project_id === project.id);
   const openTasks = projectTasks.filter((task) => task.status !== "done");
   const completed = projectTasks.length - openTasks.length;
@@ -52,7 +53,7 @@ export function ProjectOverview({ project, tasks, documents, onOpenTask, onOpenF
     <div className="min-w-0 space-y-6 [overflow-wrap:anywhere] sm:space-y-8">
       <section aria-labelledby="project-progress-heading" className="min-w-0 space-y-4 rounded-lg border p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-2"><h2 id="project-progress-heading" className="text-xl">Project progress</h2><span className="max-w-full text-sm">{project.status === "active" ? "Active" : project.status === "completed" ? "Completed" : project.status === "on_hold" ? "On hold" : project.status}</span></div>
-        <p className="text-sm">Current stage: <strong>{stageLabel(project.current_stage)}</strong></p>
+        <p className="text-sm">Current stage: <strong>{stageLabel(project.current_stage, stages)}</strong></p>
         <div className="space-y-2"><div className="flex flex-wrap justify-between gap-x-4 gap-y-1 text-sm"><label htmlFor={`project-progress-${project.id}`}>Tasks completed</label><span>{completed} of {projectTasks.length} ({percent}%)</span></div><progress id={`project-progress-${project.id}`} className="h-2 w-full accent-primary" value={percent} max={100}>{percent}%</progress></div>
         <dl className="grid gap-3 text-sm sm:grid-cols-3"><div className="min-w-0"><dt className="text-muted-foreground">Project start</dt><dd className="mt-1">{displayProjectDate(project.start_date)}</dd></div><div className="min-w-0"><dt className="text-muted-foreground">Target handover</dt><dd className="mt-1">{displayProjectDate(project.target_date)}</dd></div><div className="min-w-0"><dt className="text-muted-foreground">Next due date</dt><dd className="mt-1">{nextDue ? displayProjectDate(nextDue.due_date) : "No upcoming due dates set"}</dd></div></dl>
         {projectTasks.length === 0 && <p className="text-sm text-muted-foreground">Tasks have not been added yet.</p>}
@@ -62,7 +63,7 @@ export function ProjectOverview({ project, tasks, documents, onOpenTask, onOpenF
 
       <section aria-labelledby="open-work-heading" className="min-w-0 space-y-3">
         <h2 id="open-work-heading" className="text-lg">Upcoming and open work</h2>
-        {attention.length === 0 ? <p className="text-sm text-muted-foreground">{projectTasks.length ? "All current tasks are complete." : "The team will add project tasks here."}</p> : <ul className="divide-y rounded-lg border">{attention.map((task) => <li key={task.id} className="min-w-0"><button type="button" onClick={() => onOpenTask(task)} className="grid min-h-11 w-full min-w-0 gap-3 p-4 text-left hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[minmax(0,1fr)_auto]"><div className="min-w-0"><p className="text-sm font-medium">{task.title}</p><p className="mt-1 text-sm text-muted-foreground">{stageLabel(task.stage)} · {statusLabel(task.status)}</p></div><div className="min-w-0 space-y-1 text-sm"><p className="text-muted-foreground">{task.start_date ? `Starts ${displayProjectDate(task.start_date)}` : "Start date not set"}</p><p className={isTaskOverdue(task) ? "text-destructive" : "text-muted-foreground"}>{task.due_date ? `${isTaskOverdue(task) ? "Overdue" : "Due"} ${displayProjectDate(task.due_date)}` : "Due date not set"}</p></div></button></li>)}</ul>}
+        {attention.length === 0 ? <p className="text-sm text-muted-foreground">{projectTasks.length ? "All current tasks are complete." : "The team will add project tasks here."}</p> : <ul className="divide-y rounded-lg border">{attention.map((task) => <li key={task.id} className="min-w-0"><button type="button" onClick={() => onOpenTask(task)} className="grid min-h-11 w-full min-w-0 gap-3 p-4 text-left hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[minmax(0,1fr)_auto]"><div className="min-w-0"><p className="text-sm font-medium">{task.title}</p><p className="mt-1 text-sm text-muted-foreground">{stageLabel(task.stage, stages)} · {statusLabel(task.status)}</p></div><div className="min-w-0 space-y-1 text-sm"><p className="text-muted-foreground">{task.start_date ? `Starts ${displayProjectDate(task.start_date)}` : "Start date not set"}</p><p className={isTaskOverdue(task) ? "text-destructive" : "text-muted-foreground"}>{task.due_date ? `${isTaskOverdue(task) ? "Overdue" : "Due"} ${displayProjectDate(task.due_date)}` : "Due date not set"}</p></div></button></li>)}</ul>}
         {openTasks.length > 5 && <p className="text-sm text-muted-foreground">Showing 5 of {openTasks.length} open tasks. Open the task list to see all work.</p>}
       </section>
 

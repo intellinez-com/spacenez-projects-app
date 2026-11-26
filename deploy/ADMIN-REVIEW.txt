@@ -12,17 +12,35 @@ Task sheet walkthrough
 1. Open the sample project. Admins/partners start on Tasks; clients start on Progress.
 2. Add task is at the top. Enter a task name and choose a stage, including stages
    with no tasks yet. Enter or Add task saves it. Failed saves retain the draft.
-3. Change status, owner, priority and start/due dates directly in the task row.
-   Use the task-name edit action to rename it. The local sample keeps changes in
-   memory only. Real project changes continue using existing database policies
-   and trigger-written activity; this UI change needs no database migration.
-4. Row Comments and Files open that part of the task panel directly. The panel
+3. Change status, owner (including global admins as well as project members), priority
+   and start/due dates directly in the task row. Use the task-name edit action to rename it.
+   The local sample keeps changes in memory only.
+4. Manage project headings (admins only):
+   - Add heading creates a new custom heading and reveals it immediately.
+   - Drag the grip handle on desktop (or use Heading options -> Move up / Move down on
+     any screen size) to reorder headings.
+   - Heading options -> Rename heading renames a heading while keeping earlier activity
+     and approval snapshots intact.
+   - Heading options -> Remove heading archives a heading; if it has tasks or is the
+     current project stage, you must explicitly choose a destination heading first.
+5. Duplicate an existing project (admins only):
+   - Click Duplicate project on a dashboard card or under More -> Duplicate project
+     inside a project.
+   - Enter the new project name (and optional client/location/notes) and click Create copy.
+   - Active headings, tasks (reset to Not started, unassigned, blank dates) and planned
+     reviews are copied into the new project. Client access, files, comments, approvals
+     and payments stay with the original project.
+   - Open the new project to add, edit or delete tasks and headings independently.
+   - Production requires applying migrations 20261125140327_project_task_people.sql,
+     20261125142431_project_stages.sql and 20261125142617_duplicate_project.sql.
+6. Row Comments and Files open that part of the task panel directly. The panel
    retains task description, approval workflow, attachment handling and comments.
-5. Search/filter tasks or collapse a stage to focus the sheet. Laptop/tablet rows
+7. Search/filter tasks or collapse a stage to focus the sheet. Laptop/tablet rows
    scroll within the sheet; phone rows stay compact and expose fields on demand.
-6. Main navigation is Tasks, Progress, Photos & files and Approvals. More contains
-   discussion, summary, project details, admin Team/Payments and alternate views.
-7. Client Progress still shows automatic Today / This week / So far activity.
+8. Main navigation is Tasks, Progress, Photos & files and Approvals. More contains
+   Duplicate project (admin), discussion, summary, project details, admin Team/Payments
+   and alternate views.
+9. Client Progress still shows automatic Today / This week / So far activity.
    Client/partner Payments remains hidden pending the owner's launch instruction.
 
 Payment walkthrough (example figures, not RCF's agreement)
@@ -59,9 +77,10 @@ Spreadsheet import walkthrough
    preview disables final creation. Production creation still uses the existing
    admin-only atomic import RPC; no new database migration is required.
 
-Stages are the 11 built-in workflow headings in src/lib/constants.ts. Normal New
-Project adds 20 starter tasks. An import adds only its source tasks. Unknown source
-stages must be mapped; this change does not create custom stage headings. Separate
+Spreadsheet imports map rows into the 11 built-in workflow headings in src/lib/constants.ts
+(which can then be renamed, reordered, extended or archived per project after creation).
+Normal New Project adds 20 starter tasks. An import adds only its source tasks. Unknown source
+stages must be mapped during import. Separate
 approval rows are linked only through explicit task IDs or an unambiguous source
 match. Other approval rows remain sourced notes with a warning; no relationship or
 client decision is invented.

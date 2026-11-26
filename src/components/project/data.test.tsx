@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   from: vi.fn(), rpc: vi.fn(), getUser: vi.fn(), storageFrom: vi.fn(),
   upload: vi.fn(), remove: vi.fn(), createSignedUrl: vi.fn(), toastError: vi.fn(),
 }));
+const heading = { key: "custom_installation", label: "Custom installation", position: 0, archived_at: null };
 vi.mock("@/integrations/supabase/client", () => ({ supabase: {
   from: mocks.from, rpc: mocks.rpc, auth: { getUser: mocks.getUser }, storage: { from: mocks.storageFrom },
 } }));
@@ -37,14 +38,29 @@ describe("project request reliability", () => {
       { id: "admin", full_name: "Sample admin", email: "admin@example.test" },
       { id: "client", full_name: "Sample client", email: "client@example.test" },
     ];
-    mocks.from.mockImplementation((table: string) => query({ data: table === "projects" ? { id: "project" } : table === "project_members" ? [member] : [], error: null }));
+    mocks.from.mockImplementation((table: string) => query({ data: table === "projects" ? { id: "project" } : table === "project_members" ? [member] : table === "project_stages" ? [heading] : [], error: null }));
     mocks.rpc.mockResolvedValue({ data: owners, error: null });
     const result = await loadProject("project");
     expect(mocks.rpc).toHaveBeenCalledWith("get_project_task_people", { p_project_id: "project" });
     expect(result.members).toEqual([member]);
     expect(result.people).toEqual(owners);
+    expect(result.stages).toEqual([heading]);
     expect(mocks.from).not.toHaveBeenCalledWith("profiles");
     expect(mocks.from).not.toHaveBeenCalledWith("user_roles");
+  });
+
+  it("loads custom and archived headings under the requested project", async () => {
+    const catalog = [heading, { key: "retired", label: "Previous heading", position: 1, archived_at: "2026-11-25T00:00:00Z" }];
+    const stageQuery = query({ data: catalog, error: null });
+    mocks.from.mockImplementation((table: string) => table === "project_stages" ? stageQuery : query({ data: table === "projects" ? { id: "project" } : [], error: null }));
+    const result = await loadProject("project");
+    expect(result.stages).toEqual(catalog);
+    expect(stageQuery.eq).toHaveBeenCalledWith("project_id", "project");
+  });
+
+  it("reports a missing heading catalogue instead of showing the wrong default groups", async () => {
+    mocks.from.mockImplementation((table: string) => query({ data: table === "projects" ? { id: "project" } : [], error: null }));
+    await expect(loadProject("project")).rejects.toThrow("Project headings could not be loaded.");
   });
 
   it("reports owner lookup errors instead of silently showing an incomplete list", async () => {

@@ -6,6 +6,7 @@ import type { Database } from "@/integrations/supabase/types";
 export type Task = Database["public"]["Tables"]["tasks"]["Row"];
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 export type ProjectPerson = Pick<Profile, "id" | "full_name" | "email">;
+export type ProjectStage = Pick<Database["public"]["Tables"]["project_stages"]["Row"], "key" | "label" | "position" | "archived_at">;
 export type Doc = Database["public"]["Tables"]["documents"]["Row"];
 
 export function errorMessage(error: unknown, fallback = "Something went wrong. Please try again.") {
@@ -23,14 +24,22 @@ export async function loadProject(id: string) {
   ]);
   for (const result of [p, t, m, d]) if (result.error) throw result.error;
   let people: ProjectPerson[] = [];
+  let stages: ProjectStage[] = [];
   if (p.data) {
-    const owners = await supabase.rpc("get_project_task_people", { p_project_id: id });
+    const [owners, headings] = await Promise.all([
+      supabase.rpc("get_project_task_people", { p_project_id: id }),
+      supabase.from("project_stages").select("key,label,position,archived_at").eq("project_id", id).order("position"),
+    ]);
     if (owners.error || !Array.isArray(owners.data)) {
       throw new Error(owners.error ? `Task owners could not be loaded. ${errorMessage(owners.error)}` : "Task owners could not be loaded. Please refresh and try again.");
     }
     people = owners.data;
+    if (headings.error || !Array.isArray(headings.data) || headings.data.filter((stage) => !stage.archived_at).length === 0) {
+      throw new Error(headings.error ? `Project headings could not be loaded. ${errorMessage(headings.error)}` : "Project headings could not be loaded. Please refresh and try again.");
+    }
+    stages = headings.data;
   }
-  return { project: p.data, tasks: t.data ?? [], members: m.data ?? [], documents: d.data ?? [], people };
+  return { project: p.data, tasks: t.data ?? [], members: m.data ?? [], documents: d.data ?? [], people, stages };
 }
 
 export function useProject(id: string) {

@@ -7,6 +7,23 @@ function event(overrides: Partial<ProjectActivity> = {}): ProjectActivity {
 }
 
 describe("Automatic activity presentation", () => {
+  it("uses event-time custom heading names while keeping legacy default labels", () => {
+    const moved = event({ payload: { title: "Kitchen layout", changes: { stage: { from: "planning", to: "custom-stage" } }, stage_label: "Furniture planning", stage_labels: { stage: { from: "Initial brief", to: "Furniture planning" } } } });
+    expect(activityDescription(moved)).toBe("moved Kitchen layout to Furniture planning");
+    expect(activityChangeDetails(moved)).toEqual(["Stage: Initial brief → Furniture planning"]);
+    const legacy = event({ payload: { title: "Kitchen layout", changes: { stage: { from: "planning", to: "layout_2d" } } } });
+    expect(activityDescription(legacy)).toBe("moved Kitchen layout to 2D Layout");
+    expect(activityChangeDetails(legacy)).toEqual(["Stage: Planning & Brief → 2D Layout"]);
+  });
+
+  it("describes heading edits as configuration rather than completed task work", () => {
+    const renamed = event({ kind: "project_updated", payload: { heading_change: { type: "renamed", previous_label: "2D Layout", label: "Furniture planning" } } });
+    const reordered = event({ kind: "project_updated", payload: { heading_change: { type: "reordered" } } });
+    expect(activityDescription(renamed)).toBe("renamed the heading 2D Layout to Furniture planning");
+    expect(activityDescription(reordered)).toBe("reordered the project headings");
+    expect(activityCounts([renamed, reordered])).toMatchObject({ completedTasks: 0, statusChanges: 0 });
+  });
+
   it("describes the recorded status transition and never presents a newly created Done task as a completion event", () => {
     const changed = event();
     const addedDone = event({ id: "new-task", task_id: "new-task", source_id: "new-task", kind: "task_created", payload: { title: "Imported task", status: "done" } });

@@ -34,6 +34,11 @@ function show(rows = [approval], props: { canEdit?: boolean; canApprove?: boolea
 beforeEach(() => vi.resetAllMocks());
 
 describe("client review boundaries", () => {
+  it("keeps the heading name captured in the submitted approval snapshot", async () => {
+    const capturedTask = { ...approval.snapshot.task, stage_label: "Original furniture planning" };
+    show([{ ...approval, snapshot: { ...approval.snapshot, task: capturedTask } }]);
+    expect(await screen.findByText("Original furniture planning")).toBeVisible();
+  });
   it("allows only a different client to respond to the pending current revision", () => {
     expect(canRespondToApproval(approval, 2, "client", true)).toBe(true);
     expect(canRespondToApproval(approval, 3, "client", true)).toBe(false);

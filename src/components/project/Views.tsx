@@ -1,13 +1,15 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { format, parseISO, differenceInCalendarDays, addDays, min as minDate, max as maxDate } from "date-fns";
-import { Plus, MessageSquare, Paperclip, Search, ChevronDown, ChevronRight, ChevronUp, Pencil } from "lucide-react";
+import { Plus, MessageSquare, Paperclip, Search, ChevronDown, ChevronRight, ChevronUp, Pencil, GripVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { STAGES, STATUSES, PRIORITIES, stageLabel, statusLabel } from "@/lib/constants";
+import { STAGES, STATUSES, PRIORITIES, stageLabel, statusLabel, type StageDefinition } from "@/lib/constants";
+import { reorderProjectStages, useProjectStageMutations } from "@/lib/project-stages";
 import { statusBg } from "@/components/StatusPill";
 import { isTaskOverdue } from "@/lib/task-dates";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { Task, ProjectPerson, Doc } from "./data";
+import { ProjectHeadingActions, ProjectHeadingsManager, type HeadingDialog } from "./ProjectHeadingsManager";
 
 type Common = {
   tasks: Task[];
@@ -15,6 +17,8 @@ type Common = {
   canEdit: boolean;
   onOpen: (t: Task, section?: "comments" | "files") => void;
   onUpdate: (id: string, patch: Partial<Task>) => Promise<void>;
+  stages?: readonly StageDefinition[];
+  stageCatalog?: readonly StageDefinition[];
 };
 
 type RowState = {
@@ -50,9 +54,10 @@ type TableProps = Common & {
   documents?: Doc[];
   defaultStage?: string;
   onAdd: (stage: string, title: string, pos: number) => Promise<void>;
+  headingManagement?: { projectId: string; actorId: string; version: number; currentStage: string; onReload: () => Promise<unknown> } | undefined;
 };
 
-export function TableView({ tasks, people, canEdit, onOpen, onUpdate, onAdd, documents = [], defaultStage }: TableProps) {
+export function TableView({ tasks, people, canEdit, onOpen, onUpdate, onAdd, documents = [], defaultStage, stages = STAGES, stageCatalog = stages, headingManagement }: TableProps) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [showEmpty, setShowEmpty] = useState(false);
@@ -61,7 +66,7 @@ export function TableView({ tasks, people, canEdit, onOpen, onUpdate, onAdd, doc
   const [rowStates, setRowStates] = useState<Record<string, RowState>>({});
   const writeLocks = useRef(new Set<string>());
   const [addOpen, setAddOpen] = useState(false);
-  const [addStage, setAddStage] = useState(STAGES.some((stage) => stage.key === defaultStage) ? defaultStage! : STAGES[0].key);
+  const [addStage, setAddStage] = useState(stages.some((stage) => stage.key === defaultStage) ? defaultStage! : stages[0]?.key ?? "");
   const [title, setTitle] = useState("");
   const [adding, setAdding] = useState(false);
   const addLock = useRef(false);
@@ -69,13 +74,52 @@ export function TableView({ tasks, people, canEdit, onOpen, onUpdate, onAdd, doc
   const [addedMessage, setAddedMessage] = useState("");
   const addInput = useRef<HTMLInputElement>(null);
   const formId = useId();
-  const groups = [...STAGES.map((stage) => ({ key: stage.key as string, label: stage.label as string })), ...Array.from(new Set(tasks.map((task) => task.stage))).filter((stage) => !STAGES.some((known) => known.key === stage)).map((stage) => ({ key: stage, label: stageLabel(stage) }))];
+  const [headingDialog, setHeadingDialog] = useState<HeadingDialog | null>(null);
+  const [revealedHeadings, setRevealedHeadings] = useState<string[]>([]);
+  const [focusHeading, setFocusHeading] = useState<string | null>(null);
+  const [draggingHeading, setDraggingHeading] = useState<string | null>(null);
+  const [dragOverHeading, setDragOverHeading] = useState<string | null>(null);
+  const draggedHeading = useRef<string | null>(null);
+  const headingButtons = useRef(new Map<string, HTMLButtonElement>());
+  const focusedRevealedHeading = useRef<string | null>(null);
+  const headingMutation = useProjectStageMutations({
+    projectId: headingManagement?.projectId ?? null,
+    actorId: headingManagement?.actorId ?? null,
+    version: headingManagement?.version ?? 0,
+    onReload: headingManagement?.onReload,
+    onSaved: (action, result) => {
+      setHeadingDialog(null);
+      if (action.type === "add" && result.stage_key) {
+        setRevealedHeadings((current) => current.includes(result.stage_key!) ? current : [...current, result.stage_key!]);
+        setFocusHeading(result.stage_key);
+        setCollapsed((current) => ({ ...current, [result.stage_key!]: false }));
+      } else if (action.type === "archive") {
+        setRevealedHeadings((current) => current.filter((key) => key !== action.key));
+      }
+    },
+  });
+  const selectedAddStage = stages.some((stage) => stage.key === addStage) ? addStage : stages[0]?.key ?? "";
+  const groups = [...stages, ...Array.from(new Set(tasks.map((task) => task.stage))).filter((stage) => !stages.some((known) => known.key === stage)).map((stage) => ({ key: stage, label: stageLabel(stage, stageCatalog) }))];
   const search = query.trim().toLocaleLowerCase();
-  const filtered = tasks.filter((task) => (!search || `${task.title} ${task.description ?? ""} ${stageLabel(task.stage)} ${displayOwner(task.assignee_id, people)}`.toLocaleLowerCase().includes(search)) && (status === "all" || task.status === status));
+  const filtered = tasks.filter((task) => (!search || `${task.title} ${task.description ?? ""} ${stageLabel(task.stage, stageCatalog)} ${displayOwner(task.assignee_id, people)}`.toLocaleLowerCase().includes(search)) && (status === "all" || task.status === status));
   const hasFilter = !!search || status !== "all";
-  const visibleGroups = groups.filter((stage) => filtered.some((task) => task.stage === stage.key) || (!hasFilter && showEmpty));
+  const visibleGroups = groups.filter((stage) => filtered.some((task) => task.stage === stage.key) || (!hasFilter && showEmpty) || revealedHeadings.includes(stage.key));
+  const visibleActiveStages = visibleGroups.filter((group) => stages.some((stage) => stage.key === group.key));
+  const draggedIndex = draggingHeading ? stages.findIndex((stage) => stage.key === draggingHeading) : -1;
 
   useEffect(() => { if (addOpen && !adding) addInput.current?.focus(); }, [addOpen, adding]);
+  useEffect(() => {
+    if (!focusHeading || focusedRevealedHeading.current === focusHeading) return;
+    const target = headingButtons.current.get(focusHeading);
+    if (target) { focusedRevealedHeading.current = focusHeading; target.focus(); target.scrollIntoView?.({ block: "nearest" }); }
+  }, [focusHeading, stages]);
+
+  function openHeading(dialog: HeadingDialog) { headingMutation.clearError(); setHeadingDialog(dialog); }
+  function reorderHeading(from: string, to: string) {
+    if (!headingManagement || headingMutation.disabled || from === to) return;
+    const keys = reorderProjectStages(stages.map((stage) => stage.key), from, to);
+    void headingMutation.mutate({ type: "reorder", keys });
+  }
 
   function rowState(id: string) { return rowStates[id] ?? emptyRowState; }
   function changeRow(id: string, patch: Partial<RowState>) {
@@ -105,19 +149,19 @@ export function TableView({ tasks, people, canEdit, onOpen, onUpdate, onAdd, doc
   }
   async function addTask(event: React.FormEvent) {
     event.preventDefault();
-    if (!canEdit || addLock.current || !title.trim()) return;
+    if (!canEdit || addLock.current || !title.trim() || !selectedAddStage) return;
     addLock.current = true;
     setAdding(true);
     setAddError(null);
     setAddedMessage("");
     try {
       const position = Math.max(-1, ...tasks.map((task) => Number.isFinite(task.position) ? task.position : -1)) + 1;
-      await onAdd(addStage, title.trim(), position);
+      await onAdd(selectedAddStage, title.trim(), position);
       setTitle("");
       setQuery("");
       setStatus("all");
-      setCollapsed((groups) => ({ ...groups, [addStage]: false }));
-      setAddedMessage(`Task added to ${stageLabel(addStage)}.`);
+      setCollapsed((groups) => ({ ...groups, [selectedAddStage]: false }));
+      setAddedMessage(`Task added to ${stageLabel(selectedAddStage, stageCatalog)}.`);
       addInput.current?.focus();
     } catch (error) { setAddError(saveError(error)); }
     finally { setAdding(false); addLock.current = false; }
@@ -133,6 +177,7 @@ export function TableView({ tasks, people, canEdit, onOpen, onUpdate, onAdd, doc
     <div className="min-w-0 space-y-4">
       <div className="flex min-w-0 flex-wrap items-center gap-2" aria-label="Task tools">
         {canEdit && <Button type="button" className="min-h-11" onClick={() => showAdd()} aria-expanded={addOpen} aria-controls={formId}><Plus className="h-4 w-4" />Add task</Button>}
+        {headingManagement && <Button type="button" variant="outline" className="min-h-11" disabled={headingMutation.disabled} onClick={() => openHeading({ kind: "add", label: "", version: headingManagement.version })}><Plus className="h-4 w-4" />Add heading</Button>}
         <div className="relative min-w-0 flex-1 basis-44 sm:max-w-xs">
           <Search className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
           <Input aria-label="Search tasks" placeholder="Search tasks" value={query} onChange={(event) => setQuery(event.target.value)} className="h-11 pl-9" />
@@ -142,14 +187,15 @@ export function TableView({ tasks, people, canEdit, onOpen, onUpdate, onAdd, doc
           {STATUSES.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
         </select>
         <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-muted-foreground sm:ml-auto">
-          <input type="checkbox" checked={showEmpty} onChange={(event) => setShowEmpty(event.target.checked)} className="h-4 w-4 accent-primary" />Empty stages
+          <input type="checkbox" checked={showEmpty} onChange={(event) => setShowEmpty(event.target.checked)} className="h-4 w-4 accent-primary" />Empty headings
         </label>
       </div>
+      {headingManagement && <ProjectHeadingsManager dialog={headingDialog} onDialogChange={setHeadingDialog} mutation={headingMutation} stages={stages} tasks={tasks} currentStage={headingManagement.currentStage} version={headingManagement.version} />}
       {canEdit && <div id={formId} hidden={!addOpen} className="rounded-md border bg-card p-3">
         <form aria-label="Add a task" onSubmit={(event) => void addTask(event)} className="flex min-w-0 flex-wrap items-end gap-3">
           <label className="min-w-0 flex-1 basis-64 space-y-1 text-sm font-medium"><span>Task name</span><Input ref={addInput} disabled={adding} value={title} onChange={(event) => { setTitle(event.target.value); setAddedMessage(""); }} placeholder="What needs to be done?" required className="h-11" /></label>
-          <label className="min-w-0 flex-1 basis-48 space-y-1 text-sm font-medium"><span>Stage</span><select aria-label="Stage" value={addStage} onChange={(event) => setAddStage(event.target.value)} disabled={adding} className={touchFieldCls}>{STAGES.map((stage) => <option key={stage.key} value={stage.key}>{stage.label}</option>)}</select></label>
-          <Button type="submit" disabled={adding || !title.trim()} className="min-h-11">{adding ? "Adding..." : "Create task"}</Button>
+          <label className="min-w-0 flex-1 basis-48 space-y-1 text-sm font-medium"><span>Stage</span><select aria-label="Stage" value={selectedAddStage} onChange={(event) => setAddStage(event.target.value)} disabled={adding} className={touchFieldCls}>{stages.map((stage) => <option key={stage.key} value={stage.key}>{stage.label}</option>)}</select></label>
+          <Button type="submit" disabled={adding || !title.trim() || !selectedAddStage} className="min-h-11">{adding ? "Adding..." : "Create task"}</Button>
           <Button type="button" variant="ghost" className="min-h-11" disabled={adding} onClick={() => setAddOpen(false)}>Close</Button>
         </form>
         {addError && <p role="alert" className="mt-2 text-sm text-destructive">{addError}</p>}
@@ -158,21 +204,58 @@ export function TableView({ tasks, people, canEdit, onOpen, onUpdate, onAdd, doc
       <p className="text-xs text-muted-foreground" aria-live="polite">{hasFilter ? `${filtered.length} of ${tasks.length}` : tasks.length} {tasks.length === 1 ? "task" : "tasks"}</p>
       {visibleGroups.length === 0 && <div className="rounded-md border bg-card px-4 py-8 text-sm">
         <p>{tasks.length === 0 ? "No tasks yet." : "No tasks match your search or status filter."}</p>
-        {hasFilter && <Button variant="outline" className="mt-3 min-h-11" onClick={() => { setQuery(""); setStatus("all"); }}>Clear filters</Button>}
+        {hasFilter ? <Button variant="outline" className="mt-3 min-h-11" onClick={() => { setQuery(""); setStatus("all"); }}>Clear filters</Button>
+          : !showEmpty && stages.length > 0 && <Button type="button" variant="outline" className="mt-3 min-h-11" onClick={() => setShowEmpty(true)}>Show empty headings</Button>}
       </div>}
       {visibleGroups.map((stage) => {
         const rows = filtered.filter((task) => task.stage === stage.key);
         const allRows = tasks.filter((task) => task.stage === stage.key);
         const done = allRows.filter((task) => task.status === "done").length;
         const isCollapsed = !!collapsed[stage.key];
-        const canAddToStage = canEdit && STAGES.some((known) => known.key === stage.key);
+        const stagePosition = stages.findIndex((known) => known.key === stage.key);
+        const visiblePosition = visibleActiveStages.findIndex((known) => known.key === stage.key);
+        const canAddToStage = canEdit && stagePosition >= 0;
+        const isDropTarget = dragOverHeading === stage.key && draggingHeading !== stage.key;
         const contentId = `${formId}-${stage.key}`;
         return <section key={stage.key} aria-label={`${stage.label} tasks`} className="min-w-0">
-          <div className="flex min-w-0 items-center gap-2 border-b">
-            <button type="button" aria-expanded={!isCollapsed} aria-controls={contentId} onClick={() => setCollapsed((groups) => ({ ...groups, [stage.key]: !isCollapsed }))} className="flex min-h-11 min-w-0 flex-1 items-center gap-2 text-left font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <div
+            onDragOver={(event) => {
+              if (headingManagement && stagePosition >= 0 && !headingMutation.disabled && draggedHeading.current && draggedHeading.current !== stage.key) {
+                event.preventDefault();
+                if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+                if (dragOverHeading !== stage.key) setDragOverHeading(stage.key);
+              }
+            }}
+            onDragLeave={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                setDragOverHeading((current) => current === stage.key ? null : current);
+              }
+            }}
+            onDrop={(event) => {
+              const source = draggedHeading.current;
+              draggedHeading.current = null;
+              setDraggingHeading(null);
+              setDragOverHeading(null);
+              if (source && source !== stage.key && headingManagement && stagePosition >= 0) {
+                event.preventDefault();
+                reorderHeading(source, stage.key);
+              }
+            }}
+            className={cn(
+              "flex min-w-0 items-center gap-2 border-b transition-colors",
+              draggingHeading === stage.key && "opacity-50",
+              isDropTarget && "bg-muted/50",
+              isDropTarget && draggedIndex > stagePosition && "border-t-2 border-t-primary",
+              isDropTarget && draggedIndex >= 0 && draggedIndex < stagePosition && "border-b-2 border-b-primary",
+              isDropTarget && draggedIndex < 0 && "border-primary",
+            )}
+          >
+            {headingManagement && stagePosition >= 0 && <button type="button" draggable={!headingMutation.disabled} disabled={headingMutation.disabled} aria-label={`Drag ${stage.label} heading to reorder; use heading options for Move up or Move down`} title="Drag heading to reorder" onDragStart={(event) => { draggedHeading.current = stage.key; setDraggingHeading(stage.key); if (event.dataTransfer) { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("application/x-spacenez-heading", stage.key); } }} onDragEnd={() => { draggedHeading.current = null; setDraggingHeading(null); setDragOverHeading(null); }} className="hidden h-11 w-11 shrink-0 cursor-grab items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing disabled:opacity-50 sm:flex"><GripVertical className="h-4 w-4" /></button>}
+            <button ref={(element) => { if (element) headingButtons.current.set(stage.key, element); else headingButtons.current.delete(stage.key); }} type="button" aria-expanded={!isCollapsed} aria-controls={contentId} onClick={() => setCollapsed((groups) => ({ ...groups, [stage.key]: !isCollapsed }))} className="flex min-h-11 min-w-0 flex-1 items-center gap-2 text-left font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
               {isCollapsed ? <ChevronRight className="h-4 w-4 shrink-0" /> : <ChevronDown className="h-4 w-4 shrink-0" />}<span className="min-w-0 [overflow-wrap:anywhere]">{stage.label}</span><span className="shrink-0 text-xs font-normal text-muted-foreground">{done}/{allRows.length} done</span>
             </button>
             {canAddToStage && <button type="button" aria-label={`Add task to ${stage.label}`} onClick={() => showAdd(stage.key)} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><Plus className="h-4 w-4" /></button>}
+            {headingManagement && stagePosition >= 0 && <ProjectHeadingActions label={stage.label} disabled={headingMutation.disabled} first={visiblePosition <= 0} last={visiblePosition < 0 || visiblePosition >= visibleActiveStages.length - 1} only={stages.length <= 1} onRename={() => openHeading({ kind: "rename", key: stage.key, label: stage.label, version: headingManagement.version })} onRemove={() => openHeading({ kind: "archive", key: stage.key, destination: "", version: headingManagement.version })} onMove={(direction) => { const target = visibleActiveStages[visiblePosition + direction]; if (target) reorderHeading(stage.key, target.key); }} />}
           </div>
           <div id={contentId} hidden={isCollapsed}>
             <div className="md:hidden"><div role="list" aria-label={`${stage.label} task list`} className="divide-y border-x border-b bg-card">{rows.map((task) => <TaskListItem key={task.id} {...rowProps(task)} />)}</div></div>
@@ -272,7 +355,7 @@ function TaskListItem(props: RowProps) {
   </div>;
 }
 
-export function BoardView({ tasks, people, canEdit, onOpen, onUpdate }: Common) {
+export function BoardView({ tasks, people, canEdit, onOpen, onUpdate, stages = STAGES, stageCatalog = stages }: Common) {
   const [over, setOver] = useState<string | null>(null);
   const name = (id: string | null) => people.find((p) => p.id === id)?.full_name;
   return (
@@ -301,7 +384,7 @@ export function BoardView({ tasks, people, canEdit, onOpen, onUpdate }: Common) 
                   onClick={() => onOpen(t)}
                   className="block min-h-11 w-full min-w-0 rounded-lg border bg-card p-3 text-left shadow-soft [overflow-wrap:anywhere] hover:border-oak"
                 >
-                  <p className="text-xs text-muted-foreground">{STAGES.find((x) => x.key === t.stage)?.label}</p>
+                  <p className="text-xs text-muted-foreground">{stageLabel(t.stage, stageCatalog)}</p>
                   <p className="mt-1 text-sm font-medium">{t.title}</p>
                   <div className="mt-2 flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     <span className="min-w-0">{name(t.assignee_id) ?? ""}</span>
@@ -317,7 +400,7 @@ export function BoardView({ tasks, people, canEdit, onOpen, onUpdate }: Common) 
   );
 }
 
-export function TimelineView({ tasks, onOpen }: Pick<Common, "tasks" | "onOpen">) {
+export function TimelineView({ tasks, onOpen, stages = STAGES, stageCatalog = stages }: Pick<Common, "tasks" | "onOpen" | "stages" | "stageCatalog">) {
   const dated = tasks.filter((t) => t.start_date || t.due_date);
   if (!dated.length)
     return <p className="rounded-xl border border-dashed bg-card p-10 text-center text-muted-foreground">Add start and due dates to items to see them on the timeline.</p>;
@@ -339,7 +422,7 @@ export function TimelineView({ tasks, onOpen }: Pick<Common, "tasks" | "onOpen">
             <span key={w.toISOString()} className="absolute top-2" style={{ left: `${pct(w)}%` }}>{format(w, "d MMM")}</span>
           ))}
         </div>
-        {STAGES.map((stage) => {
+        {[...stages, ...Array.from(new Set(dated.map((task) => task.stage))).filter((key) => !stages.some((stage) => stage.key === key)).map((key) => ({ key, label: stageLabel(key, stageCatalog) }))].map((stage) => {
           const rows = dated.filter((t) => t.stage === stage.key);
           if (!rows.length) return null;
           return (

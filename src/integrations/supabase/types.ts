@@ -300,6 +300,12 @@ export type Database = {
           },
         ]
       }
+      project_stages: {
+        Row: { project_id: string; key: string; label: string; position: number; archived_at: string | null }
+        Insert: { project_id: string; key: string; label: string; position?: number; archived_at?: string | null }
+        Update: { key?: string; label?: string; position?: number; archived_at?: string | null }
+        Relationships: [{ foreignKeyName: "project_stages_project_id_fkey"; columns: ["project_id"]; isOneToOne: false; referencedRelation: "projects"; referencedColumns: ["id"] }]
+      }
       projects: {
         Row: {
           client_brand: string | null
@@ -314,6 +320,7 @@ export type Database = {
           meeting_url: string | null
           name: string
           project_type: string
+          stage_revision: number
           start_date: string | null
           status: string
           target_date: string | null
@@ -331,6 +338,7 @@ export type Database = {
           meeting_url?: string | null
           name: string
           project_type?: string
+          stage_revision?: number
           start_date?: string | null
           status?: string
           target_date?: string | null
@@ -348,6 +356,7 @@ export type Database = {
           meeting_url?: string | null
           name?: string
           project_type?: string
+          stage_revision?: number
           start_date?: string | null
           status?: string
           target_date?: string | null
@@ -625,6 +634,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      mutate_project_stages: {
+        Args: { p_project_id: string; p_expected_version: number; p_request_id: string; p_action: Json }
+        Returns: Json
+      }
+      duplicate_project: {
+        Args: { p_source_project_id: string; p_request_id: string; p_project: Json }
+        Returns: Json
+      }
       get_project_task_people: {
         Args: { p_project_id: string }
         Returns: { id: string; full_name: string; email: string | null }[]

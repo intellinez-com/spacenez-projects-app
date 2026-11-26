@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ProjectImportDialog } from "@/components/project/ProjectImportDialog";
+import { DuplicateProjectDialog } from "@/components/project/DuplicateProjectDialog";
 import { isTaskOverdue } from "@/lib/task-dates";
 import { projectTypeLabel } from "@/lib/project-type";
 import { projectDay } from "@/lib/daily-updates";
@@ -28,23 +29,31 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 
 function Dashboard() {
   const { data: me } = useMe();
+  const [duplicateSource, setDuplicateSource] = useState<{ id: string; name: string; project_type: string } | null>(null);
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["projects"],
     queryFn: async () => {
-      const [{ data: projects, error }, { data: tasks, error: taskError }] = await Promise.all([
+      const [{ data: projects, error }, { data: tasks, error: taskError }, { data: stages, error: stageError }] = await Promise.all([
         supabase.from("projects").select("*").order("created_at", { ascending: false }),
         supabase.from("tasks").select("id, project_id, status, due_date"),
+        supabase.from("project_stages").select("project_id,key,label,position,archived_at").order("position"),
       ]);
       if (error) throw error;
       if (taskError) throw taskError;
-      return { projects: projects ?? [], tasks: tasks ?? [] };
+      if (stageError) throw stageError;
+      return { projects: projects ?? [], tasks: tasks ?? [], stages: stages ?? [] };
     },
   });
 
   const projects = data?.projects ?? [];
   const tasks = data?.tasks ?? [];
+  const stages = data?.stages ?? [];
   const overdue = tasks.filter((task) => isTaskOverdue(task));
-  const inExecution = projects.filter((p) => p.current_stage === "execution").length;
+  const currentHeadings = new Map<string, number>();
+  for (const project of projects) {
+    const label = stageLabel(project.current_stage, stages.filter((stage) => stage.project_id === project.id));
+    currentHeadings.set(label, (currentHeadings.get(label) ?? 0) + 1);
+  }
   const projectIds = projects.map((project) => project.id);
   const [today, setToday] = useState(() => projectDay());
   useEffect(() => {
@@ -72,7 +81,7 @@ function Dashboard() {
 
       {me?.isAdmin && !isError && !isLoading && <div className="mt-6 grid grid-cols-2 gap-3 sm:mt-8 sm:gap-4 lg:grid-cols-4">
         <Stat label="Active projects" value={projects.filter((p) => p.status === "active").length} />
-        <Stat label="In execution" value={inExecution} />
+        <Stat label="On hold" value={projects.filter((project) => project.status === "on_hold").length} />
         <Stat label="Open tasks" value={tasks.filter((t) => t.status !== "done").length} />
         <Stat label="Overdue tasks" value={overdue.length} warn={overdue.length > 0} />
       </div>}
@@ -81,12 +90,11 @@ function Dashboard() {
         <section className="mt-10">
           <h2 className="text-xl">Pipeline by stage</h2>
           <div className="mt-4 flex gap-3 overflow-x-auto pb-2">
-            {STAGES.map((s) => {
-              const n = projects.filter((p) => p.current_stage === s.key).length;
+            {[...currentHeadings].map(([label, count]) => {
               return (
-                <div key={s.key} className="min-w-36 flex-1 rounded-lg border bg-card p-3">
-                  <p className="text-xs text-muted-foreground">{s.label}</p>
-                  <p className="font-display text-2xl">{n}</p>
+                <div key={label} className="min-w-36 flex-1 rounded-lg border bg-card p-3">
+                  <p className="text-xs text-muted-foreground">{label}</p>
+                  <p className="font-display text-2xl">{count}</p>
                 </div>
               );
             })}
@@ -121,13 +129,14 @@ function Dashboard() {
               const pt = tasks.filter((t) => t.project_id === p.id);
               const pct = progressOf(pt);
               const typeLabel = projectTypeLabel(p.project_type);
+              const projectStages = stages.filter((stage) => stage.project_id === p.id && !stage.archived_at);
               return (
+                <article key={p.id} className="min-w-0 rounded-lg border bg-card">
                 <Link
-                  key={p.id}
                   to="/projects/$id"
                   params={{ id: p.id }}
                   aria-label={`Open daily status for ${p.name}`}
-                  className="group min-w-0 rounded-lg border bg-card p-4 transition-colors hover:border-oak focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-5"
+                  className="group block min-w-0 p-4 transition-colors hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-5"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
@@ -151,17 +160,20 @@ function Dashboard() {
                     <p className="pt-1 text-sm font-medium text-oak">Open daily status →</p>
                   </div>
                   <div className="mt-5">
-                    <StageTrack current={stageIndex(p.current_stage)} />
+                    <StageTrack current={stageIndex(p.current_stage, projectStages)} stages={projectStages} />
                     <p className="mt-2 text-sm">
-                      <span className="text-muted-foreground">Stage:</span> {stageLabel(p.current_stage)}
+                      <span className="text-muted-foreground">Stage:</span> {stageLabel(p.current_stage, projectStages)}
                     </p>
                   </div>
                 </Link>
+                {me?.isAdmin && <div className="border-t px-3 py-1"><Button type="button" size="sm" variant="ghost" className="min-h-11" onClick={() => setDuplicateSource({ id: p.id, name: p.name, project_type: p.project_type })}>Duplicate project</Button></div>}
+                </article>
               );
             })}
           </div>
         )}
       </section>
+      {me?.isAdmin && duplicateSource && <DuplicateProjectDialog source={duplicateSource} actorId={me.id} open={true} onOpenChange={(open) => { if (!open) setDuplicateSource(null); }} />}
     </div>
   );
 }

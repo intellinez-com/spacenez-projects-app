@@ -36,6 +36,7 @@ beforeEach(() => {
       target_date: null, current_stage: "layout_2d", status: "active", created_at: "2026-11-01T00:00:00Z",
     }], error: null }) }) };
     if (table === "tasks") return { select: async () => ({ data: [{ id: "task-a", project_id: "project-a", status: "done", due_date: null, updated_at: "2026-11-20T09:00:00Z" }], error: null }) };
+    if (table === "project_stages") return { select: () => ({ order: async () => ({ data: [{ project_id: "project-a", key: "layout_2d", label: "Space planning", position: 0, archived_at: null }], error: null }) }) };
     throw new Error(`Unexpected table ${table}`);
   });
   mocks.loadLatest.mockResolvedValue({ "project-a": event });
@@ -57,6 +58,8 @@ describe("Daily status on the client dashboard", () => {
     expect(screen.getByText("Today’s activity")).toBeInTheDocument();
     expect(screen.getByText("Designer", { exact: true })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open daily status for Sample interior project" })).toHaveAttribute("href", "/projects/project-a");
+    expect(screen.getByText("Space planning")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Duplicate project" })).not.toBeInTheDocument();
     expect(screen.getByText("Open daily status →")).toBeInTheDocument();
     expect(screen.queryByText("Active projects")).not.toBeInTheDocument();
     expect(screen.queryByText("Open tasks")).not.toBeInTheDocument();
@@ -145,5 +148,6 @@ describe("Daily status on the client dashboard", () => {
     expect(screen.getByRole("heading", { name: "Projects" })).toBeInTheDocument();
     expect(await screen.findByText(/Kitchen measurements/)).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("button", { name: "New project" })).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Duplicate project" })).toBeInTheDocument();
   });
 });

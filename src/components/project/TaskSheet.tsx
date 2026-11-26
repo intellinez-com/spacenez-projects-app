@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { STAGES, STATUSES, PRIORITIES, stageLabel, statusLabel } from "@/lib/constants";
+import { STAGES, STATUSES, PRIORITIES, stageLabel, statusLabel, type StageDefinition } from "@/lib/constants";
 import { type Task, type ProjectPerson, type Doc, uploadDoc, openDoc, fmtSize, errorMessage } from "./data";
 import { TaskApprovalPanel } from "./approvals";
 
@@ -21,6 +21,8 @@ type TaskSheetProps = {
   canApprove: boolean;
   currentUserId: string | null;
   people: ProjectPerson[];
+  stages?: readonly StageDefinition[];
+  stageCatalog?: readonly StageDefinition[];
   docs: Doc[];
   initialSection?: "comments" | "files" | undefined;
   onClose: () => void;
@@ -32,7 +34,7 @@ export function TaskSheet(props: TaskSheetProps) {
   return props.task ? <TaskSheetContent key={props.task.id} {...props} task={props.task} /> : null;
 }
 
-function TaskSheetContent({ task, projectId, canEdit, canApprove, currentUserId, people, docs, initialSection, onClose, onUpdate, onDelete }: Omit<TaskSheetProps, "task"> & { task: Task }) {
+function TaskSheetContent({ task, projectId, canEdit, canApprove, currentUserId, people, docs, initialSection, onClose, onUpdate, onDelete, stages = STAGES, stageCatalog = stages }: Omit<TaskSheetProps, "task"> & { task: Task }) {
   const qc = useQueryClient();
   const commentInput = useRef<HTMLTextAreaElement>(null);
   const filesHeading = useRef<HTMLHeadingElement>(null);
@@ -79,7 +81,7 @@ function TaskSheetContent({ task, projectId, canEdit, canApprove, currentUserId,
     return date && isValid(date) ? format(date, "d MMM yyyy") : "Not set";
   };
   const readOnlyFields = [
-    ["Status", statusLabel(task.status)], ["Stage", stageLabel(task.stage)],
+    ["Status", statusLabel(task.status)], ["Stage", stageLabel(task.stage, stageCatalog)],
     ["Priority", PRIORITIES.find((priority) => priority.key === task.priority)?.label ?? task.priority],
     ["Owner", task.assignee_id ? assignee?.full_name || assignee?.email || "Assigned team member" : "Unassigned"],
     ["Start", dateLabel(task.start_date)], ["Due", dateLabel(task.due_date)],
@@ -182,7 +184,7 @@ function TaskSheetContent({ task, projectId, canEdit, canApprove, currentUserId,
             {field("Stage",
               <Select disabled={editingDisabled} value={task.stage} onValueChange={(v) => void save({ stage: v })}>
                 <SelectTrigger aria-label="Stage" className="min-h-11 min-w-0 text-base md:text-sm"><SelectValue /></SelectTrigger>
-                <SelectContent>{STAGES.map((s) => <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>)}</SelectContent>
+                <SelectContent>{!stages.some((stage) => stage.key === task.stage) && <SelectItem value={task.stage} disabled>{stageLabel(task.stage, stageCatalog)} (not active)</SelectItem>}{stages.map((s) => <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>)}</SelectContent>
               </Select>)}
             {field("Priority",
               <Select disabled={editingDisabled} value={task.priority} onValueChange={(v) => void save({ priority: v })}>
